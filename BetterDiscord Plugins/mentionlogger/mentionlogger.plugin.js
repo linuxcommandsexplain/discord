@@ -8,7 +8,7 @@
  * @license Unlicensed
  * @website https://sleek.blackbox.sh/
  * @source https://github.com/s4dic/discord/new/main/BetterDiscord%20Plugins/mentionlogger
- * @updateUrl https://raw.githubusercontent.com/s4dic/discord/new/main/BetterDiscord Plugins/mentionlogger/mentionlogger.plugin.js
+ * @updateUrl https://raw.githubusercontent.com/s4dic/discord/refs/heads/main/BetterDiscord%20Plugins/mentionlogger/mentionlogger.plugin.js
  */
 
 module.exports = class MentionLogger {
