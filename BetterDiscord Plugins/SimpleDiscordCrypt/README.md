@@ -9,7 +9,7 @@ Add this plugin to add an protection to protect your privacy on discord.
 
 ## install :
 ------------
-Install BetterDiscord and save this [Plugin](https://raw.githubusercontent.com/s4dic/SimpleDiscordCrypt/main/SimpleDiscordCryptLoader.plugin.js) to your BetterDiscord in `plugins` folder.
+Install BetterDiscord and save this [Plugin](https://raw.githubusercontent.com/s4dic/discord/refs/heads/main/BetterDiscord%20Plugins/SimpleDiscordCrypt/SimpleDiscordCryptLoader.plugin.js) to your BetterDiscord in `plugins` folder.
 
 ## Configure :
 ------------
