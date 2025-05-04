@@ -1,5 +1,5 @@
 # AutoFollowSingleUser
-Original source: https://github.com/d3v-me/AutoFollowUser
+Original source: Membre of ItNews Discord.
 
 **AutoFollowSingleUser** is a BetterDiscord plugin that allows you to automatically follow a single user at a time in voice channels. When you follow a user, the plugin will automatically move you to the same voice channel as the followed user. If you choose to follow another user, the previous user’s follow will be stopped.
 
