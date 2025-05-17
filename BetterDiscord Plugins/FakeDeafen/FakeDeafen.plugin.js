@@ -1,20 +1,20 @@
 /**
  * @name FakeDeafen
  * @description Lets you appear deafened while still being able to hear and talk
- * @version 0.5
+ * @version 0.6
  * @author Sleek
  * @authorId 153253064231354368
  * @invite B5kBdSsED2
  * @license Unlicensed
  * @website https://sleek.blackbox.sh/
- * @source https://github.com/s4dic/discord/tree/main/BetterDiscord%20Plugins/FakeDeafen
- * @updateUrl https://github.com/s4dic/discord/tree/main/BetterDiscord%20Plugins/FakeDeafen/FakeDeafen.plugin.js
+ * @source https://github.com/s4dic/BetterDiscord/tree/main/FakeDeafen
+ * @updateUrl https://raw.githubusercontent.com/s4dic/BetterDiscord/main/FakeDeafen/FakeDeafen.plugin.js
  */
 
 module.exports = class FakeDeafen {
     constructor(meta) {
         this.meta = meta;
-        this.mySettings = { shiftKeyRequired: false, triggerKey: "w" };
+        this.mySettings = { shiftKeyRequired: false, triggerKey: "w", showButton: false };
         this.isActive = false;
 
         this.myButton = document.createElement("button");
@@ -24,15 +24,6 @@ module.exports = class FakeDeafen {
         this.myButton.style.width = "150px";
         this.myButton.style.height = "40px";
         this.myButton.style.fontSize = "12px";
-
-        const muteButton = document.querySelector('[aria-label="Mute"]');
-        if (muteButton) {
-            const buttonContainer = document.createElement("div");
-            buttonContainer.classList.add("button-container");
-            buttonContainer.appendChild(this.myButton);
-
-            muteButton.parentNode.insertBefore(buttonContainer, muteButton.nextSibling);
-        }
 
         // Save the original send method
         WebSocket.prototype.originalSend = WebSocket.prototype.send;
@@ -49,12 +40,10 @@ module.exports = class FakeDeafen {
                 }
                 WebSocket.prototype.originalSend.apply(this, [data]);
             };
-            BdApi.UI.showToast("Fake Deafen Activated", {type: "success"});
             BdApi.showToast("Fake Deafen Activated", {type: "success"});
             this.isActive = true;
         } else {
             WebSocket.prototype.send = WebSocket.prototype.originalSend;
-            BdApi.UI.showToast("Fake Deafen Deactivated", {type: "warning"});
             BdApi.showToast("Fake Deafen Deactivated", {type: "warning"});
             this.isActive = false;
         }
@@ -64,6 +53,17 @@ module.exports = class FakeDeafen {
         // Load settings
         Object.assign(this.mySettings, BdApi.Data.load(this.meta.name, "settings"));
         document.addEventListener("keydown", this.handleKeyDown.bind(this));
+
+        // Inject the button only if the setting is enabled
+        if (this.mySettings.showButton) {
+            const muteButton = document.querySelector('[aria-label="Mute"]');
+            if (muteButton) {
+                const buttonContainer = document.createElement("div");
+                buttonContainer.classList.add("button-container");
+                buttonContainer.appendChild(this.myButton);
+                muteButton.parentNode.insertBefore(buttonContainer, muteButton.nextSibling);
+            }
+        }
     }
 
     handleKeyDown(event) {
@@ -73,9 +73,8 @@ module.exports = class FakeDeafen {
     }
 
     stop() {
-        // Restore original WebSocket send method
         WebSocket.prototype.send = WebSocket.prototype.originalSend;
-        this.myButton.remove();
+        if (this.myButton) this.myButton.remove();
         document.removeEventListener("keydown", this.handleKeyDown.bind(this));
     }
 
@@ -96,8 +95,16 @@ module.exports = class FakeDeafen {
             BdApi.Data.save(this.meta.name, "settings", this.mySettings);
         };
 
+        const showButtonSetting = document.createElement("div");
+        showButtonSetting.innerHTML = `<label>Show Button: <input type="checkbox" ${this.mySettings.showButton ? "checked" : ""}/></label>`;
+        showButtonSetting.querySelector('input').onchange = (e) => {
+            this.mySettings.showButton = e.target.checked;
+            BdApi.Data.save(this.meta.name, "settings", this.mySettings);
+        };
+
         panel.appendChild(triggerKeySetting);
         panel.appendChild(shiftKeySetting);
+        panel.appendChild(showButtonSetting);
         return panel;
     }
 };
