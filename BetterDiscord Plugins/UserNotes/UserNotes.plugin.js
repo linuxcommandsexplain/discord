@@ -6,7 +6,7 @@
  * @description Allows you to write User Notes locally (File-based storage with dynamic modal)
  * @invite B5kBdSsED2
  * @website https://github.com/s4dic/discord
- * @source https://github.com/mwittrien/BetterDiscordAddons/tree/master/Plugins/UserNotes/
+ * @source https://github.com/s4dic/discord/tree/main/BetterDiscord%20Plugins/UserNotes/
  * @updateUrl https://github.com/s4dic/discord/tree/main/BetterDiscord%20Plugins/UserNotes/UserNotes.plugin.js
  */
 
