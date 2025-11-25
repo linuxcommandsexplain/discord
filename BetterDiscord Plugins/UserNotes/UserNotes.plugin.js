@@ -2,7 +2,7 @@
  * @name UserNotes
  * @author DevilBro & Sleek
  * @authorId 108351165988618240
- * @version 2.0
+ * @version 2.1
  * @description Allows you to write User Notes locally (File-based storage with dynamic modal)
  * @invite B5kBdSsED2
  * @website https://github.com/s4dic/discord
@@ -71,40 +71,150 @@ module.exports = (_ => {
                 if (!fs.existsSync(this.notesDir)) {
                     fs.mkdirSync(this.notesDir, { recursive: true });
                 }
+                
+                this.patchContextMenu();
             }
-
+            
             onStop () {
-                // Nettoyage du CSS custom
                 const customStyle = document.getElementById("usernotes-custom-css");
                 if (customStyle) customStyle.remove();
+                
+                if (this.observer) {
+                    this.observer.disconnect();
+                    this.observer = null;
+                }
+            }
+            
+            patchContextMenu() {
+                this.observer = new MutationObserver((mutations) => {
+                    for (const mutation of mutations) {
+                        for (const node of mutation.addedNodes) {
+                            if (node.nodeType !== 1) continue;
+                            
+                            const menu = node.id === 'user-context' ? node : 
+                                        node.querySelector('#user-context');
+                            
+                            if (menu && !menu.dataset.userNotesPatched) {
+                                menu.dataset.userNotesPatched = 'true';
+                                this.injectMenuItem(menu);
+                            }
+                        }
+                    }
+                });
+                
+                this.observer.observe(document.body, {
+                    childList: true,
+                    subtree: true
+                });
+            }
+            
+            injectMenuItem(menu) {
+                const reactFiberKey = Object.keys(menu).find(k => k.startsWith('__reactFiber'));
+                if (!reactFiberKey) return;
+                
+                let userId = null;
+                let userName = "User";
+                
+                let fiber = menu[reactFiberKey];
+                let maxDepth = 20;
+                while (fiber && maxDepth-- > 0) {
+                    if (fiber.memoizedProps?.user?.id) {
+                        userId = fiber.memoizedProps.user.id;
+                        userName = fiber.memoizedProps.user.username || fiber.memoizedProps.user.globalName || "User";
+                        break;
+                    }
+                    fiber = fiber.return;
+                }
+                
+                if (!userId) return;
+                
+                const note = this.loadNote(userId);
+                const hasNote = note && note.trim() !== "";
+                
+                const groups = menu.querySelectorAll('[role="group"]');
+                const lastGroup = groups[groups.length - 1];
+                if (!lastGroup) return;
+                
+                const noteItem = this.createMenuItem(userId, userName, hasNote);
+                
+                const newGroup = document.createElement('div');
+                newGroup.setAttribute('role', 'group');
+                newGroup.appendChild(noteItem);
+                
+                const separator = document.createElement('div');
+                separator.className = 'separator_c9dda3';
+                separator.setAttribute('role', 'separator');
+                
+                lastGroup.parentNode.insertBefore(separator, lastGroup.nextSibling);
+                lastGroup.parentNode.insertBefore(newGroup, separator.nextSibling);
+            }
+            
+            createMenuItem(userId, userName, hasNote) {
+                const item = document.createElement('div');
+                item.className = 'item_c91bad labelContainer_c91bad colorDefault_c91bad';
+                item.setAttribute('role', 'menuitem');
+                item.setAttribute('tabindex', '-1');
+                item.id = 'user-note-context';
+                
+                // Force le style natif Discord avec padding correct
+                item.style.cssText = `
+                    background: transparent !important; 
+                    color: var(--interactive-normal) !important;
+                    padding: 6px 8px !important;
+                    min-height: 32px !important;
+                    display: flex !important;
+                    align-items: center !important;
+                    box-sizing: border-box !important;
+                `;
+                
+                item.innerHTML = `
+                    <div class="label_c91bad" style="color: inherit !important; flex: 1 1 auto;">🕵️ ${this.labels.user_note}</div>
+                    ${hasNote ? '<div class="hint_c91bad" style="color: inherit !important;">✓</div>' : ''}
+                `;
+                
+                item.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    document.querySelector('#user-context')?.remove();
+                    this.openNotesModal({ id: userId, username: userName });
+                });
+                
+                item.addEventListener('mouseenter', () => {
+                    item.classList.add('focused_c1e9c4');
+                    item.style.cssText = `
+                        background: var(--menu-item-default-hover-bg) !important; 
+                        color: var(--interactive-hover) !important;
+                        padding: 6px 8px !important;
+                        min-height: 32px !important;
+                        display: flex !important;
+                        align-items: center !important;
+                        box-sizing: border-box !important;
+                    `;
+                });
+                
+                item.addEventListener('mouseleave', () => {
+                    item.classList.remove('focused_c1e9c4');
+                    item.style.cssText = `
+                        background: transparent !important; 
+                        color: var(--interactive-normal) !important;
+                        padding: 6px 8px !important;
+                        min-height: 32px !important;
+                        display: flex !important;
+                        align-items: center !important;
+                        box-sizing: border-box !important;
+                    `;
+                });
+                
+                return item;
             }
 
-            onUserContextMenu (e) {
-                if (!e.instance.props.user) return;
-                
-                const user = e.instance.props.user;
-                const note = this.loadNote(user.id);
-                
-                let [children, index] = BDFDB.ContextMenuUtils.findItem(e.returnvalue, {id: "devmode-copy-id", group: true});
-                children.splice(index > -1 ? index + 1 : 0, 0, BDFDB.ContextMenuUtils.createItem(BDFDB.LibraryComponents.MenuItems.MenuGroup, {
-                    children: BDFDB.ContextMenuUtils.createItem(BDFDB.LibraryComponents.MenuItems.MenuItem, {
-                        label: this.labels.user_note,
-                        id: BDFDB.ContextMenuUtils.createItemId(this.name, "user-note"),
-                        hint: note ? "✓" : null,
-                        action: _ => {
-                            this.openNotesModal(user);
-                        }
-                    })
-                }));
-            }
-        
+            
             getSettingsPanel (collapseStates = {}) {
                 let settingsPanel;
                 return settingsPanel = BDFDB.PluginUtils.createSettingsPanel(this, {
                     collapseStates: collapseStates,
                     children: _ => {
                         let settingsItems = [];
-                        
                         settingsItems.push(BDFDB.ReactUtils.createElement(BDFDB.LibraryComponents.SettingsItem, {
                             type: "Button",
                             color: BDFDB.LibraryComponents.Button.Colors.RED,
@@ -116,27 +226,19 @@ module.exports = (_ => {
                             },
                             children: BDFDB.LanguageUtils.LanguageStrings.REMOVE
                         }));
-                        
                         return settingsItems;
                     }
                 });
             }
-
+            
             openNotesModal (user) {
                 let note = this.loadNote(user.id);
-                
-                // Calcul dynamique basé sur la taille de l'écran
                 const screenHeight = window.innerHeight;
                 const screenWidth = window.innerWidth;
-                
-                // Taille de la modale : 70% de la hauteur, 60% de la largeur
                 const modalHeight = Math.floor(screenHeight * 0.7);
                 const modalWidth = Math.min(Math.floor(screenWidth * 0.6), 900);
-                
-                // Calcul du nombre de lignes pour le textarea
                 const textareaRows = Math.floor((modalHeight - 150) / 20);
                 
-                // Injection du CSS personnalisé
                 this.injectCustomCSS();
                 
                 BDFDB.ModalUtils.open(this, {
@@ -171,10 +273,9 @@ module.exports = (_ => {
                     }]
                 });
             }
-
+            
             injectCustomCSS () {
                 if (document.getElementById("usernotes-custom-css")) return;
-                
                 const style = document.createElement("style");
                 style.id = "usernotes-custom-css";
                 style.textContent = `
@@ -185,7 +286,7 @@ module.exports = (_ => {
                 `;
                 document.head.appendChild(style);
             }
-
+            
             loadNote (userId) {
                 const notePath = path.join(this.notesDir, `${userId}.txt`);
                 if (fs.existsSync(notePath)) {
@@ -193,10 +294,9 @@ module.exports = (_ => {
                 }
                 return "";
             }
-
+            
             saveNote (userId, content) {
                 const notePath = path.join(this.notesDir, `${userId}.txt`);
-                
                 if (!content || content.trim() === "") {
                     if (fs.existsSync(notePath)) {
                         fs.unlinkSync(notePath);
@@ -207,138 +307,49 @@ module.exports = (_ => {
                     BDFDB.NotificationUtils.toast("Note saved", {type: "success"});
                 }
             }
-
+            
             deleteAllNotes () {
                 if (!fs.existsSync(this.notesDir)) return;
-                
                 const files = fs.readdirSync(this.notesDir);
                 files.forEach(file => {
                     if (file.endsWith(".txt")) {
                         fs.unlinkSync(path.join(this.notesDir, file));
                     }
                 });
-                
                 BDFDB.NotificationUtils.toast("All notes removed", {type: "success"});
             }
-
+            
             setLabelsByLanguage () {
                 switch (BDFDB.LanguageUtils.getLanguage().id) {
-                    case "bg":		// Bulgarian
-                        return {
-                            user_note:							"Потребителска бележка"
-                        };
-                    case "cs":		// Czech
-                        return {
-                            user_note:							"Uživatelská poznámka"
-                        };
-                    case "da":		// Danish
-                        return {
-                            user_note:							"Brugernote"
-                        };
-                    case "de":		// German
-                        return {
-                            user_note:							"Benutzernotiz"
-                        };
-                    case "el":		// Greek
-                        return {
-                            user_note:							"Σημείωση χρήστη"
-                        };
-                    case "es":		// Spanish
-                        return {
-                            user_note:							"Nota de usuario"
-                        };
-                    case "fi":		// Finnish
-                        return {
-                            user_note:							"Käyttäjän muistiinpano"
-                        };
-                    case "fr":		// French
-                        return {
-                            user_note:							"Note utilisateur"
-                        };
-                    case "hi":		// Hindi
-                        return {
-                            user_note:							"उपयोगकर्ता नोट"
-                        };
-                    case "hr":		// Croatian
-                        return {
-                            user_note:							"Korisnička bilješka"
-                        };
-                    case "hu":		// Hungarian
-                        return {
-                            user_note:							"Felhasználói jegyzet"
-                        };
-                    case "it":		// Italian
-                        return {
-                            user_note:							"Nota utente"
-                        };
-                    case "ja":		// Japanese
-                        return {
-                            user_note:							"ユーザーノート"
-                        };
-                    case "ko":		// Korean
-                        return {
-                            user_note:							"사용자 메모"
-                        };
-                    case "lt":		// Lithuanian
-                        return {
-                            user_note:							"Vartotojo pastaba"
-                        };
-                    case "nl":		// Dutch
-                        return {
-                            user_note:							"Gebruikersnotitie"
-                        };
-                    case "no":		// Norwegian
-                        return {
-                            user_note:							"Brukermerknad"
-                        };
-                    case "pl":		// Polish
-                        return {
-                            user_note:							"Uwaga użytkownika"
-                        };
-                    case "pt-BR":	// Portuguese (Brazil)
-                        return {
-                            user_note:							"Nota do usuário"
-                        };
-                    case "ro":		// Romanian
-                        return {
-                            user_note:							"Notă utilizator"
-                        };
-                    case "ru":		// Russian
-                        return {
-                            user_note:							"Примечание пользователя"
-                        };
-                    case "sv":		// Swedish
-                        return {
-                            user_note:							"Användaranteckning"
-                        };
-                    case "th":		// Thai
-                        return {
-                            user_note:							"หมายเหตุผู้ใช้"
-                        };
-                    case "tr":		// Turkish
-                        return {
-                            user_note:							"Kullanıcı notu"
-                        };
-                    case "uk":		// Ukrainian
-                        return {
-                            user_note:							"Примітка користувача"
-                        };
-                    case "vi":		// Vietnamese
-                        return {
-                            user_note:							"Ghi chú của người dùng"
-                        };
-                    case "zh-CN":	// Chinese (China)
-                        return {
-                            user_note:							"用户须知"
-                        };
-                    case "zh-TW":	// Chinese (Taiwan)
-                        return {
-                            user_note:							"用戶須知"
-                        };
-                    default:		// English
-                        return {
-                            user_note:							"User Note"
-                        };
+                    case "bg": return { user_note: "Потребителска бележка" };
+                    case "cs": return { user_note: "Uživatelská poznámka" };
+                    case "da": return { user_note: "Brugernote" };
+                    case "de": return { user_note: "Benutzernotiz" };
+                    case "el": return { user_note: "Σημείωση χρήστη" };
+                    case "es": return { user_note: "Nota de usuario" };
+                    case "fi": return { user_note: "Käyttäjän muistiinpano" };
+                    case "fr": return { user_note: "Note utilisateur" };
+                    case "hi": return { user_note: "उपयोगकर्ता नोट" };
+                    case "hr": return { user_note: "Korisnička bilješka" };
+                    case "hu": return { user_note: "Felhasználói jegyzet" };
+                    case "it": return { user_note: "Nota utente" };
+                    case "ja": return { user_note: "ユーザーノート" };
+                    case "ko": return { user_note: "사용자 메모" };
+                    case "lt": return { user_note: "Vartotojo pastaba" };
+                    case "nl": return { user_note: "Gebruikersnotitie" };
+                    case "no": return { user_note: "Brukermerknad" };
+                    case "pl": return { user_note: "Uwaga użytkownika" };
+                    case "pt-BR": return { user_note: "Nota do usuário" };
+                    case "ro": return { user_note: "Notă utilizator" };
+                    case "ru": return { user_note: "Примечание пользователя" };
+                    case "sv": return { user_note: "Användaranteckning" };
+                    case "th": return { user_note: "หมายเหตุผู้ใช้" };
+                    case "tr": return { user_note: "Kullanıcı notu" };
+                    case "uk": return { user_note: "Примітка користувача" };
+                    case "vi": return { user_note: "Ghi chú của người dùng" };
+                    case "zh-CN": return { user_note: "用户须知" };
+                    case "zh-TW": return { user_note: "用戶須知" };
+                    default: return { user_note: "User Note" };
                 }
             }
         };
