@@ -1,7 +1,7 @@
 /**
  * @name AutoFollowUser
  * @author Sleek
- * @version 1.1.4
+ * @version 1.1.5
  * @description Ce plugin BetterDiscord vous permet de suivre automatiquement vos amis lorsqu'ils entrent dans un salon vocal, sans logs ni console.
  */
 
@@ -11,6 +11,9 @@ module.exports = class AutoFollowUser {
         this.followInterval = null;
         this.modalObserver = null;
         this.contextObserver = null;
+
+        this.voiceStateStore = null;
+        this.channelActions = null;
     }
 
     start() {
@@ -30,7 +33,7 @@ module.exports = class AutoFollowUser {
                 for (const node of mutation.addedNodes) {
                     if (node.nodeType === 1) {
                         // Détection de TOUS les types de menus contextuels
-                        const menu = node.querySelector?.('[role="menu"]') || 
+                        const menu = node.querySelector?.('[role="menu"]') ||
                                    (node.getAttribute?.('role') === 'menu' ? node : null);
                         
                         if (menu && !menu.querySelector('#auto-follow-context')) {
@@ -92,8 +95,10 @@ module.exports = class AutoFollowUser {
         } else {
             // Fallback: insertion au début
             const firstItem = contextMenu.querySelector('[role="menuitem"]');
-            if (firstItem) {
+            if (firstItem && firstItem.parentNode) {
                 firstItem.parentNode.insertBefore(menuItem, firstItem);
+            } else {
+                contextMenu.appendChild(menuItem);
             }
         }
     }
@@ -190,12 +195,37 @@ module.exports = class AutoFollowUser {
     }
 
     startFollowInterval() {
-        const v = BdApi.findModuleByProps('getVoiceStateForUser');
-        const s = BdApi.findModuleByProps('selectVoiceChannel');
-        
+        // On utilise la nouvelle API Webpack de BetterDiscord
+        this.voiceStateStore =
+            this.voiceStateStore ||
+            BdApi.Webpack.getStore("VoiceStateStore") ||
+            BdApi.Webpack.getByKeys("getVoiceStateForUser");
+
+        this.channelActions =
+            this.channelActions ||
+            BdApi.Webpack.getByKeys("selectVoiceChannel", "selectChannel");
+
+        if (!this.voiceStateStore || !this.channelActions) {
+            console.error("[AutoFollowUser] Failed to get VoiceStateStore or ChannelActions", {
+                voiceStateStore: this.voiceStateStore,
+                channelActions: this.channelActions
+            });
+            BdApi.UI.showToast('❌ Auto-follow error: Discord API changed', { type: 'error' });
+            return;
+        }
+
+        // On évite les doublons d’intervalle
+        if (this.followInterval) {
+            clearInterval(this.followInterval);
+        }
+
         this.followInterval = setInterval(() => {
-            const u = v.getVoiceStateForUser(this.currentUser);
-            if (u && u.channelId) s.selectVoiceChannel(u.channelId);
+            if (!this.currentUser) return;
+
+            const vs = this.voiceStateStore.getVoiceStateForUser?.(this.currentUser);
+            if (vs && vs.channelId) {
+                this.channelActions.selectVoiceChannel?.(vs.channelId);
+            }
         }, 1000);
     }
 
