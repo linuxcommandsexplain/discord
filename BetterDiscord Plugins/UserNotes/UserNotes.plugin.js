@@ -2,7 +2,7 @@
  * @name UserNotes
  * @author DevilBro & Sleek
  * @authorId 108351165988618240
- * @version 2.1
+ * @version 2.2
  * @description Allows you to write User Notes locally (File-based storage with dynamic modal)
  * @invite B5kBdSsED2
  * @website https://github.com/s4dic/discord
@@ -11,9 +11,7 @@
  */
 
 module.exports = (_ => {
-    const changeLog = {
-        
-    };
+    const changeLog = { };
 
     return !window.BDFDB_Global || (!window.BDFDB_Global.loaded && !window.BDFDB_Global.started) ? class {
         constructor (meta) {for (let key in meta) this[key] = meta[key];}
@@ -28,14 +26,19 @@ module.exports = (_ => {
                 else return r.text();
             }).then(b => {
                 if (!b) throw new Error();
-                else return require("fs").writeFile(require("path").join(BdApi.Plugins.folder, "0BDFDB.plugin.js"), b, _ => BdApi.UI.showToast("Finished downloading BDFDB Library", {type: "success"}));
+                else return require("fs").writeFile(
+                    require("path").join(BdApi.Plugins.folder, "0BDFDB.plugin.js"),
+                    b,
+                    _ => BdApi.UI.showToast("Finished downloading BDFDB Library", {type: "success"})
+                );
             }).catch(error => {
                 BdApi.UI.alert("Error", "Could not download BDFDB Library Plugin. Try again later or download it manually from GitHub: https://mwittrien.github.io/downloader/?library");
             });
         }
         
         load () {
-            if (!window.BDFDB_Global || !Array.isArray(window.BDFDB_Global.pluginQueue)) window.BDFDB_Global = Object.assign({}, window.BDFDB_Global, {pluginQueue: []});
+            if (!window.BDFDB_Global || !Array.isArray(window.BDFDB_Global.pluginQueue))
+                window.BDFDB_Global = Object.assign({}, window.BDFDB_Global, {pluginQueue: []});
             if (!window.BDFDB_Global.downloadModal) {
                 window.BDFDB_Global.downloadModal = true;
                 BdApi.UI.showConfirmationModal("Library Missing", `The Library Plugin needed for ${this.name} is missing. Please click "Download Now" to install it.`, {
@@ -48,7 +51,8 @@ module.exports = (_ => {
                     }
                 });
             }
-            if (!window.BDFDB_Global.pluginQueue.includes(this.name)) window.BDFDB_Global.pluginQueue.push(this.name);
+            if (!window.BDFDB_Global.pluginQueue.includes(this.name))
+                window.BDFDB_Global.pluginQueue.push(this.name);
         }
         start () {this.load();}
         stop () {}
@@ -65,6 +69,7 @@ module.exports = (_ => {
         return class UserNotes extends Plugin {
             onLoad () {
                 this.notesDir = path.join(BdApi.Plugins.folder, "UserNotesData");
+                this.labels = this.setLabelsByLanguage();
             }
             
             onStart () {
@@ -91,12 +96,17 @@ module.exports = (_ => {
                         for (const node of mutation.addedNodes) {
                             if (node.nodeType !== 1) continue;
                             
-                            const menu = node.id === 'user-context' ? node : 
-                                        node.querySelector('#user-context');
+                            const menu = node.id === 'user-context'
+                                ? node
+                                : node.querySelector && node.querySelector('#user-context');
                             
                             if (menu && !menu.dataset.userNotesPatched) {
                                 menu.dataset.userNotesPatched = 'true';
-                                this.injectMenuItem(menu);
+                                try {
+                                    this.injectMenuItem(menu);
+                                } catch (e) {
+                                    console.error("[UserNotes] Error while injecting menu item:", e);
+                                }
                             }
                         }
                     }
@@ -118,9 +128,10 @@ module.exports = (_ => {
                 let fiber = menu[reactFiberKey];
                 let maxDepth = 20;
                 while (fiber && maxDepth-- > 0) {
-                    if (fiber.memoizedProps?.user?.id) {
-                        userId = fiber.memoizedProps.user.id;
-                        userName = fiber.memoizedProps.user.username || fiber.memoizedProps.user.globalName || "User";
+                    const props = fiber.memoizedProps || fiber.pendingProps;
+                    if (props?.user?.id) {
+                        userId = props.user.id;
+                        userName = props.user.username || props.user.globalName || "User";
                         break;
                     }
                     fiber = fiber.return;
@@ -132,10 +143,13 @@ module.exports = (_ => {
                 const hasNote = note && note.trim() !== "";
                 
                 const groups = menu.querySelectorAll('[role="group"]');
+                if (!groups || !groups.length) return;
+                
                 const lastGroup = groups[groups.length - 1];
-                if (!lastGroup) return;
+                if (!lastGroup || !lastGroup.parentNode) return;
                 
                 const noteItem = this.createMenuItem(userId, userName, hasNote);
+                if (!noteItem) return;
                 
                 const newGroup = document.createElement('div');
                 newGroup.setAttribute('role', 'group');
@@ -145,8 +159,11 @@ module.exports = (_ => {
                 separator.className = 'separator_c9dda3';
                 separator.setAttribute('role', 'separator');
                 
+                if (!lastGroup.parentNode) return;
+                
                 lastGroup.parentNode.insertBefore(separator, lastGroup.nextSibling);
-                lastGroup.parentNode.insertBefore(newGroup, separator.nextSibling);
+                if (!separator.parentNode) return;
+                separator.parentNode.insertBefore(newGroup, separator.nextSibling);
             }
             
             createMenuItem(userId, userName, hasNote) {
@@ -156,7 +173,8 @@ module.exports = (_ => {
                 item.setAttribute('tabindex', '-1');
                 item.id = 'user-note-context';
                 
-                // Force le style natif Discord avec padding correct
+                const labelText = (this.labels && this.labels.user_note) || "User Note";
+                
                 item.style.cssText = `
                     background: transparent !important; 
                     color: var(--interactive-normal) !important;
@@ -168,14 +186,14 @@ module.exports = (_ => {
                 `;
                 
                 item.innerHTML = `
-                    <div class="label_c91bad" style="color: inherit !important; flex: 1 1 auto;">🕵️ ${this.labels.user_note}</div>
+                    <div class="label_c91bad" style="color: inherit !important; flex: 1 1 auto;">🕵️ ${labelText}</div>
                     ${hasNote ? '<div class="hint_c91bad" style="color: inherit !important;">✓</div>' : ''}
                 `;
                 
-                item.addEventListener('click', (e) => {
-                    e.preventDefault();
+                // ⬇️ PATCH ICI : on ne supprime plus le menu contextuel manuellement
+                item.addEventListener("click", (e) => {
+                    // on laisse Discord fermer le menu tout seul
                     e.stopPropagation();
-                    document.querySelector('#user-context')?.remove();
                     this.openNotesModal({ id: userId, username: userName });
                 });
                 
@@ -208,7 +226,6 @@ module.exports = (_ => {
                 return item;
             }
 
-            
             getSettingsPanel (collapseStates = {}) {
                 let settingsPanel;
                 return settingsPanel = BDFDB.PluginUtils.createSettingsPanel(this, {
@@ -232,6 +249,8 @@ module.exports = (_ => {
             }
             
             openNotesModal (user) {
+                if (!user || !user.id) return;
+
                 let note = this.loadNote(user.id);
                 const screenHeight = window.innerHeight;
                 const screenWidth = window.innerWidth;
