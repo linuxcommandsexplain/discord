@@ -51,7 +51,7 @@ const config = {
         twitter_username: "hmrrtt",
     },
     version: {
-        current: "2.1.0",
+        current: "2.1.1",
         latest: "",
         update: false,
         ignoreUpdate: false,
