@@ -16,7 +16,7 @@ export const config = {
 		repository: "https://github.com/s4dic/discord/new/main/BetterDiscord%20Plugins/encryption",
 		source: "https://raw.githubusercontent.com/s4dic/discord/refs/heads/main/BetterDiscord%20Plugins/encryption/encryption.plugin.js",
 		sourceConfig:
-			"https://github.com/s4dic/discord/tree/main/BetterDiscord%20Plugins/encryption/master/src/lib/config.ts"
+			"https://raw.githubusercontent.com/s4dic/discord/refs/heads/main/BetterDiscord%20Plugins/encryption/master/src/lib/config.ts"
 	}
 };
 
