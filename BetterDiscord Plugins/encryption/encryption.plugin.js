@@ -1,6 +1,6 @@
 /**
  * @name Encryption
- * @version 2.1.1
+ * @version 2.1.2
  * @description Message encryption using AES-256
  * @author hmerritt & Sleek
  * @website https://github.com/s4dic
@@ -46,9 +46,8 @@ const config = {
     nameTitle: "Encryption",
     description: "Message encryption using AES-256",
     author: {
-        name: "Harry Merritt",
-        github_username: "hmerritt",
-        twitter_username: "hmrrtt",
+        name: "Harry Merritt & Sleek",
+        github_username: "S4d1c",
     },
     version: {
         current: "2.1.1",
@@ -57,9 +56,9 @@ const config = {
         ignoreUpdate: false,
     },
     link: {
-        repository: "https://github.com/hmerritt/discord-encryption",
-        source: "https://github.com/hmerritt/discord-encryption/releases/latest/download/encryption.plugin.js",
-        sourceConfig: "https://raw.githubusercontent.com/hmerritt/discord-encryption/master/src/lib/config.ts",
+        repository: "https://github.com/s4dic/discord/tree/main/BetterDiscord%20Plugins/encryption",
+        source: "https://raw.githubusercontent.com/s4dic/discord/refs/heads/main/BetterDiscord%20Plugins/encryption/encryption.plugin.js",
+        sourceConfig: "https://raw.githubusercontent.com/s4dic/discord/refs/heads/main/BetterDiscord%20Plugins/encryption/master/src/lib/config.ts",
     },
 };
 
