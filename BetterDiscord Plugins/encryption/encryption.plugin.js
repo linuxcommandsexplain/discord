@@ -50,7 +50,7 @@ const config = {
         github_username: "S4d1c",
     },
     version: {
-        current: "2.1.1",
+        current: "2.1.2",
         latest: "",
         update: false,
         ignoreUpdate: false,
