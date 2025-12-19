@@ -7,7 +7,7 @@ export const config = {
 		github_username: "s4dic",
 	},
 	version: {
-		current: "2.1.2",
+		current: "2.1.3",
 		latest: "",
 		update: false,
 		ignoreUpdate: false
