@@ -1,6 +1,6 @@
 /**
  * @name Encryption
- * @version 2.1.2
+ * @version 2.1.3
  * @description Message encryption using AES-256
  * @author hmerritt & Sleek
  * @website https://github.com/s4dic
@@ -50,7 +50,7 @@ const config = {
         github_username: "S4d1c",
     },
     version: {
-        current: "2.1.2",
+        current: "2.1.3",
         latest: "",
         update: false,
         ignoreUpdate: false,
@@ -18919,7 +18919,7 @@ const toggleState = (script, userData) => {
 const encryptionButton = (script, userData) => ({
     html: () => html$1(script, userData),
     close: (delay = 0) => close$1(script, userData, delay),
-    inject: () => inject(componentName$1, `.attachWrapper__0923f`, "after", html$1(script, userData)),
+    inject: () => {}, // injection gérée via patch React
     //
     toggleState: () => toggleState(script, userData),
 });
@@ -18968,6 +18968,55 @@ var index = !window.ZeresPluginLibrary
                 /*
                  * Define global variables
                  */
+				patchChannelTextArea() {
+					const React = BdApi.React;
+					const Webpack = BdApi.Webpack;
+
+					// Même cible que InvisibleTyping
+					const ChatButtonsGroup = Webpack.getBySource("type", "showAllButtons", "paymentsBlocked")?.Z;
+					if (!ChatButtonsGroup) return;
+
+					const plugin = this;
+
+					function EncryptionButtonMount({ channelId }) {
+						const ref = React.useRef(null);
+
+						React.useLayoutEffect(() => {
+							if (!ref.current) return;
+
+							// Re-mount propre à chaque render / channel change
+							ref.current.textContent = "";
+							const btn = plugin.components.encryptionButton.html();
+
+							// Optionnel: forcer l’état à jour au montage
+							btn.setAttribute("state", String(isEncryptionOn(getUserData(), channelId) ?? false));
+
+							ref.current.appendChild(btn);
+						}, [channelId]);
+
+						return React.createElement("span", { ref, style: { display: "flex" } });
+					}
+
+					Patcher.after(ChatButtonsGroup, "type", (_, args, res) => {
+						if (!res?.props?.children || !Array.isArray(res.props.children)) return;
+
+						const props = args[0];
+
+						// Garde-fous similaires à InvisibleTyping (évite des contextes non standards)
+						if (args.length === 2 && !props.disabled && props.type?.analyticsName === "normal") {
+							const channelId = props.channel?.id || (getChannelId() || "global");
+
+							// Position:
+							// - unshift() => tout début (comme InvisibleTyping)
+							// - push() => tout à la fin
+							// - splice(i,0,...) => position exacte
+							res.props.children.unshift(
+								React.createElement(EncryptionButtonMount, { channelId })
+							);
+						}
+					});
+				}
+
                 constructor() {
                     super();
                     injectLog();
@@ -18991,6 +19040,7 @@ var index = !window.ZeresPluginLibrary
                  */
                 start() {
                     //  Inject styles
+					this.patchChannelTextArea();
                     inject("styles", "head", "append", this.components.styles);
                     this.bootstrapUi();
                     Patcher.before(DiscordModules.MessageActions, "sendMessage", (t, a) => {
@@ -19015,6 +19065,7 @@ var index = !window.ZeresPluginLibrary
                  */
                 stop() {
                     //  Remove all elements that have been injected
+					Patcher.unpatchAll();
                     removeElements(`[${this.script.name}]`);
                 }
                 /**
@@ -19050,7 +19101,6 @@ var index = !window.ZeresPluginLibrary
                     this.components.encryptionInput.toggleInput("hide");
                     const channelId = getChannelId() || "global";
                     const channelState = getOrCreateUserData(getUserData(), channelId);
-                    this.components.encryptionButton.inject();
                     channelState.state && decryptAllMessages(channelState);
                 }
                 //--------------------------------------------------------------------
