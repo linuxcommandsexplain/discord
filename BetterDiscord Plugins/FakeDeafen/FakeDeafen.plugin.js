@@ -1,7 +1,7 @@
 /**
  * @name FakeDeafen
  * @description Lets you appear deafened while still being able to hear and talk (blocks VOICE_STATE updates but lets channel moves pass)
- * @version 0.7
+ * @version 1.0
  * @author Sleek
  * @authorId 153253064231354368
  * @invite B5kBdSsED2
@@ -12,258 +12,333 @@
  */
 
 module.exports = class FakeDeafen {
-    constructor(meta) {
-        this.meta = meta || {};
-        this.pluginName = this.meta.name || "FakeDeafen";
-
+    constructor() {
+        this.pluginName = "FakeDeafen";
         this.mySettings = {
             shiftKeyRequired: false,
             triggerKey: "w",
-            showButton: false
+            debugMode: false
         };
-
         this.isActive = false;
-
-        this.myButton = document.createElement("button");
-        this.myButton.textContent = "Toggle Fake Deafen";
-        this.myButton.addEventListener("click", () => { this.toggleDeafen(); });
-
-        this.myButton.style.width = "150px";
-        this.myButton.style.height = "40px";
-        this.myButton.style.fontSize = "12px";
-
-        // handler pour add/removeEventListener
         this.boundHandleKeyDown = this.handleKeyDown.bind(this);
-
-        // flag pour laisser passer le prochain paquet vocal (channel move)
-        this.allowNextVoicePacket = false;
-
-        // stockera le module de changement de channel vocal
-        this.channelActions = null;
-
-        // Sauvegarde la méthode send originale une seule fois
-        if (!WebSocket.prototype._fakeDeafenOriginalSend) {
-            WebSocket.prototype._fakeDeafenOriginalSend = WebSocket.prototype.send;
-        }
+        this.originalWebSocketSend = null;
+        this.indicator = null;
     }
 
-    /* ---------------------- Utils ---------------------- */
-
-    toast(message, options = {}) {
-        if (BdApi.UI && typeof BdApi.UI.showToast === "function") {
-            BdApi.UI.showToast(message, options);
-        } else {
-            console.log(`[${this.pluginName} toast]`, message, options);
+    log(...args) {
+        if (this.mySettings.debugMode) {
+            console.log(`[${this.pluginName}]`, ...args);
         }
     }
-
-    _asciiBytes(str) {
-        const arr = new Uint8Array(str.length);
-        for (let i = 0; i < str.length; i++) {
-            arr[i] = str.charCodeAt(i) & 0xFF;
-        }
-        return arr;
-    }
-
-    /**
-     * Retourne true si ce paquet gateway doit être bloqué (ne pas être envoyé).
-     * On ne manipule pas le payload, on fait juste de l'inspection binaire.
-     */
-    shouldBlockPacket(data, url) {
-        // On ne s'intéresse qu'au gateway Discord
-        if (!url || !url.includes("gateway")) return false;
-
-        let view;
-        if (data instanceof ArrayBuffer) {
-            view = new Uint8Array(data);
-        } else if (ArrayBuffer.isView(data)) {
-            view = new Uint8Array(data.buffer, data.byteOffset, data.byteLength);
-        } else {
-            return false;
-        }
-
-        // On cherche les séquences ASCII "self_mute" ou "self_deaf" dans le binaire.
-        const patterns = [
-            this._asciiBytes("self_mute"),
-            this._asciiBytes("self_deaf")
-        ];
-
-        outer: for (const pat of patterns) {
-            const plen = pat.length;
-            if (plen === 0) continue;
-            for (let i = 0; i <= view.length - plen; i++) {
-                let ok = true;
-                for (let j = 0; j < plen; j++) {
-                    if (view[i + j] !== pat[j]) {
-                        ok = false;
-                        break;
-                    }
-                }
-                if (ok) {
-                    // On a trouvé un payload vocal (VOICE_STATE_UPDATE)
-                    return true;
-                }
-            }
-        }
-
-        return false;
-    }
-
-    /* ---------------------- Fake Deafen core ---------------------- */
-
-    toggleDeafen() {
-        if (!this.isActive) {
-            const plugin = this;
-            const originalSend = WebSocket.prototype._fakeDeafenOriginalSend;
-
-            WebSocket.prototype.send = function (data) {
-                try {
-                    // Si on a demandé explicitement de laisser passer le prochain paquet vocal,
-                    // on laisse passer tel quel et on reset le flag.
-                    if (plugin.allowNextVoicePacket && this.url && this.url.includes("gateway")) {
-                        plugin.allowNextVoicePacket = false;
-                        return originalSend.apply(this, arguments);
-                    }
-
-                    // Sinon, logique normale : on bloque les VOICE_STATE_UPDATE
-                    if (plugin.shouldBlockPacket(data, this.url)) {
-                        // On avale ce paquet (mute/deafen ne part pas au serveur)
-                        return;
-                    }
-                } catch (e) {
-                    console.error("[FakeDeafen] error while inspecting packet:", e);
-                    // En cas d'erreur, on n’empêche surtout pas l'envoi
-                }
-
-                return originalSend.apply(this, arguments);
-            };
-
-            this.toast("Fake Deafen Activated", { type: "success" });
-            this.isActive = true;
-        } else {
-            // Restaure la méthode originale
-            WebSocket.prototype.send = WebSocket.prototype._fakeDeafenOriginalSend;
-            this.toast("Fake Deafen Deactivated", { type: "warning" });
-            this.isActive = false;
-        }
-    }
-
-    /* ---------------------- BD lifecycle ---------------------- */
 
     start() {
-        // Load settings (protégé)
         try {
-            const saved = BdApi.Data.load(this.pluginName, "settings") || {};
-            Object.assign(this.mySettings, saved);
+            const settings = BdApi.Data.load(this.pluginName, "settings");
+            if (settings) {
+                this.mySettings = { ...this.mySettings, ...settings };
+            }
         } catch (e) {
-            console.error(`[${this.pluginName}] Failed to load settings`, e);
+            console.error('[FakeDeafen] Failed to load settings:', e);
         }
 
         document.addEventListener("keydown", this.boundHandleKeyDown);
+        this.patchWebSocket();
+        this.createIndicator();
 
-        // Patch des actions de channel vocal pour autoriser le prochain paquet quand on bouge
-        try {
-            this.channelActions =
-                BdApi.Webpack.getByKeys("selectVoiceChannel", "selectChannel") || null;
-
-            if (this.channelActions && this.channelActions.selectVoiceChannel) {
-                BdApi.Patcher.instead(
-                    this.pluginName,
-                    this.channelActions,
-                    "selectVoiceChannel",
-                    (that, args, original) => {
-                        // Quand l'utilisateur change de salon vocal,
-                        // on autorise explicitement le prochain VOICE_STATE_UPDATE
-                        this.allowNextVoicePacket = true;
-                        return original.apply(that, args);
-                    }
-                );
-            }
-        } catch (e) {
-            console.error(`[${this.pluginName}] Failed to patch selectVoiceChannel`, e);
-        }
-
-        // Inject le bouton si activé
-        if (this.mySettings.showButton) {
-            const muteButton = document.querySelector('[aria-label="Mute"]');
-            if (muteButton && muteButton.parentNode) {
-                const buttonContainer = document.createElement("div");
-                buttonContainer.classList.add("button-container");
-                buttonContainer.appendChild(this.myButton);
-                muteButton.parentNode.insertBefore(buttonContainer, muteButton.nextSibling);
-            }
-        }
-    }
-
-    handleKeyDown(event) {
-        const hasModifier =
-            (this.mySettings.shiftKeyRequired && event.shiftKey) ||
-            (!this.mySettings.shiftKeyRequired && event.ctrlKey);
-
-        if (
-            hasModifier &&
-            event.key.toLowerCase() === this.mySettings.triggerKey.toLowerCase()
-        ) {
-            this.toggleDeafen();
-        }
+        BdApi.UI.showToast(`${this.pluginName} started - Press ${this.mySettings.triggerKey.toUpperCase()} to toggle`, { type: "success" });
+        this.log("Plugin started");
     }
 
     stop() {
-        // On remet le send original
-        if (WebSocket.prototype._fakeDeafenOriginalSend) {
-            WebSocket.prototype.send = WebSocket.prototype._fakeDeafenOriginalSend;
-        }
-
-        if (this.myButton) this.myButton.remove();
         document.removeEventListener("keydown", this.boundHandleKeyDown);
+        this.unpatchWebSocket();
+        this.removeIndicator();
+        this.isActive = false;
 
-        try {
-            BdApi.Patcher.unpatchAll(this.pluginName);
-        } catch (e) {
-            console.error(`[${this.pluginName}] Failed to unpatch`, e);
-        }
-
-        this.allowNextVoicePacket = false;
+        BdApi.UI.showToast(`${this.pluginName} stopped`, { type: "info" });
+        this.log("Plugin stopped");
     }
 
-    /* ---------------------- Settings panel ---------------------- */
+    patchWebSocket() {
+        if (this.originalWebSocketSend) {
+            this.log("WebSocket already patched, skipping");
+            return;
+        }
+
+        this.originalWebSocketSend = WebSocket.prototype.send;
+        const self = this;
+
+        WebSocket.prototype.send = function(data) {
+            let payload = data;
+            let modified = false;
+
+            if (!self.isActive) {
+                return self.originalWebSocketSend.call(this, payload);
+            }
+
+            try {
+                // Handle ETF format (ArrayBuffer)
+                if (payload instanceof ArrayBuffer) {
+                    const view = new Uint8Array(payload);
+                    
+                    // Check for ETF magic bytes
+                    if (view[0] === 0x83 && view[1] === 0x74) {
+                        // Look for op:4 pattern (0x6f 0x70 0x61 0x04)
+                        for (let i = 0; i < view.length - 20; i++) {
+                            if (view[i] === 0x6f && view[i+1] === 0x70 && 
+                                view[i+2] === 0x61 && view[i+3] === 0x04) {
+                                
+                                self.log("🎯 VOICE_STATE_UPDATE detected (ETF)");
+                                
+                                // Search for "self_mute" followed by atom "false" (0x73 0x05 "false")
+                                for (let j = i; j < view.length - 16; j++) {
+                                    // Pattern: self_mute + s(5) + "false"
+                                    if (view[j] === 0x73 && view[j+1] === 0x65 && view[j+2] === 0x6c && 
+                                        view[j+3] === 0x66 && view[j+4] === 0x5f && view[j+5] === 0x6d &&
+                                        view[j+6] === 0x75 && view[j+7] === 0x74 && view[j+8] === 0x65 &&
+                                        view[j+9] === 0x73 && view[j+10] === 0x05 &&
+                                        view[j+11] === 0x66 && view[j+12] === 0x61 && view[j+13] === 0x6c &&
+                                        view[j+14] === 0x73 && view[j+15] === 0x65) {
+                                        
+                                        self.log("📍 Found self_mute=false, changing to true");
+                                        // Replace "false" (0x73 0x05 0x66...) with "true" (0x73 0x04 0x74...)
+                                        const modifiable = new Uint8Array(view);
+                                        modifiable[j+10] = 0x04; // length 4 instead of 5
+                                        modifiable[j+11] = 0x74; // 't'
+                                        modifiable[j+12] = 0x72; // 'r'
+                                        modifiable[j+13] = 0x75; // 'u'
+                                        modifiable[j+14] = 0x65; // 'e'
+                                        // Shift remaining bytes left by 1
+                                        for (let k = j + 15; k < modifiable.length - 1; k++) {
+                                            modifiable[k] = modifiable[k + 1];
+                                        }
+                                        payload = modifiable.buffer.slice(0, modifiable.length - 1);
+                                        modified = true;
+                                    }
+                                }
+                                
+                                // Search for "self_deaf" followed by atom "false"
+                                const currentView = new Uint8Array(payload);
+                                for (let j = i; j < currentView.length - 16; j++) {
+                                    if (currentView[j] === 0x73 && currentView[j+1] === 0x65 && currentView[j+2] === 0x6c && 
+                                        currentView[j+3] === 0x66 && currentView[j+4] === 0x5f && currentView[j+5] === 0x64 &&
+                                        currentView[j+6] === 0x65 && currentView[j+7] === 0x61 && currentView[j+8] === 0x66 &&
+                                        currentView[j+9] === 0x73 && currentView[j+10] === 0x05 &&
+                                        currentView[j+11] === 0x66 && currentView[j+12] === 0x61 && currentView[j+13] === 0x6c &&
+                                        currentView[j+14] === 0x73 && currentView[j+15] === 0x65) {
+                                        
+                                        self.log("📍 Found self_deaf=false, changing to true");
+                                        const modifiable = new Uint8Array(currentView);
+                                        modifiable[j+10] = 0x04;
+                                        modifiable[j+11] = 0x74;
+                                        modifiable[j+12] = 0x72;
+                                        modifiable[j+13] = 0x75;
+                                        modifiable[j+14] = 0x65;
+                                        for (let k = j + 15; k < modifiable.length - 1; k++) {
+                                            modifiable[k] = modifiable[k + 1];
+                                        }
+                                        payload = modifiable.buffer.slice(0, modifiable.length - 1);
+                                        modified = true;
+                                    }
+                                }
+                                
+                                if (modified) {
+                                    self.log("✅ Modified ETF packet");
+                                }
+                                break;
+                            }
+                        }
+                    }
+                }
+                // Handle JSON/zlib format (String/Blob)
+                else if (typeof payload === "string") {
+                    try {
+                        const parsed = JSON.parse(payload);
+                        if (parsed.op === 4 && parsed.d) {
+                            self.log("🎯 VOICE_STATE_UPDATE detected (JSON)");
+                            if (parsed.d.self_mute === false) {
+                                parsed.d.self_mute = true;
+                                modified = true;
+                                self.log("📍 Changed self_mute: false → true");
+                            }
+                            if (parsed.d.self_deaf === false) {
+                                parsed.d.self_deaf = true;
+                                modified = true;
+                                self.log("📍 Changed self_deaf: false → true");
+                            }
+                            if (modified) {
+                                payload = JSON.stringify(parsed);
+                                self.log("✅ Modified JSON packet");
+                            }
+                        }
+                    } catch (e) {
+                        // Not JSON, ignore
+                    }
+                }
+            } catch (e) {
+                self.log("❌ Error modifying packet:", e);
+            }
+
+            return self.originalWebSocketSend.call(this, payload);
+        };
+
+        this.log("WebSocket patched successfully");
+    }
+
+    unpatchWebSocket() {
+        if (this.originalWebSocketSend) {
+            WebSocket.prototype.send = this.originalWebSocketSend;
+            this.originalWebSocketSend = null;
+            this.log("WebSocket unpatched");
+        }
+    }
+
+    handleKeyDown(e) {
+        if (this.mySettings.shiftKeyRequired && !e.shiftKey) {
+            return;
+        }
+
+        if (e.key.toLowerCase() === this.mySettings.triggerKey.toLowerCase()) {
+            this.isActive = !this.isActive;
+            this.updateIndicator();
+            BdApi.UI.showToast(
+                `FakeDeafen ${this.isActive ? "enabled" : "disabled"}`,
+                { type: this.isActive ? "success" : "info" }
+            );
+            this.log(`FakeDeafen ${this.isActive ? "enabled" : "disabled"}`);
+        }
+    }
+
+    createIndicator() {
+        if (this.indicator) return;
+
+        this.indicator = document.createElement("div");
+        this.indicator.id = "fakedeafen-indicator";
+        this.indicator.textContent = "FD";
+        this.indicator.style.cssText = `
+            position: fixed;
+            top: 10px;
+            right: 10px;
+            width: 40px;
+            height: 40px;
+            background: #43b581;
+            color: white;
+            border-radius: 50%;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            font-size: 14px;
+            z-index: 9999;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.3);
+            cursor: pointer;
+            user-select: none;
+        `;
+        
+        this.indicator.addEventListener("click", () => {
+            this.isActive = !this.isActive;
+            this.updateIndicator();
+            BdApi.UI.showToast(
+                `FakeDeafen ${this.isActive ? "enabled" : "disabled"}`,
+                { type: this.isActive ? "success" : "info" }
+            );
+        });
+
+        document.body.appendChild(this.indicator);
+        this.log("Indicator created");
+    }
+
+    updateIndicator() {
+        if (this.indicator) {
+            this.indicator.style.display = this.isActive ? "flex" : "none";
+        }
+    }
+
+    removeIndicator() {
+        if (this.indicator) {
+            this.indicator.remove();
+            this.indicator = null;
+            this.log("Indicator removed");
+        }
+    }
 
     getSettingsPanel() {
         const panel = document.createElement("div");
+        panel.style.padding = "20px";
 
-        const triggerKeySetting = document.createElement("div");
-        triggerKeySetting.innerHTML = `
-            <label>Trigger Key:
-                <input type="text" value="${this.mySettings.triggerKey}" />
-            </label>`;
-        triggerKeySetting.querySelector("input").onchange = (e) => {
-            this.mySettings.triggerKey = e.target.value;
-            BdApi.Data.save(this.pluginName, "settings", this.mySettings);
-        };
+        const settingsDiv = document.createElement("div");
+        settingsDiv.style.cssText = "display: flex; flex-direction: column; gap: 15px;";
 
-        const shiftKeySetting = document.createElement("div");
-        shiftKeySetting.innerHTML = `
-            <label>Use Shift Key:
-                <input type="checkbox" ${this.mySettings.shiftKeyRequired ? "checked" : ""}/>
-            </label>`;
-        shiftKeySetting.querySelector("input").onchange = (e) => {
-            this.mySettings.shiftKeyRequired = e.target.checked;
-            BdApi.Data.save(this.pluginName, "settings", this.mySettings);
-        };
+        const settings = [
+            { key: "shiftKeyRequired", label: "Require Shift key", type: "checkbox" },
+            { key: "triggerKey", label: "Trigger key", type: "text" },
+            { key: "debugMode", label: "Debug mode", type: "checkbox" }
+        ];
 
-        const showButtonSetting = document.createElement("div");
-        showButtonSetting.innerHTML = `
-            <label>Show Button:
-                <input type="checkbox" ${this.mySettings.showButton ? "checked" : ""}/>
-            </label>`;
-        showButtonSetting.querySelector("input").onchange = (e) => {
-            this.mySettings.showButton = e.target.checked;
-            BdApi.Data.save(this.pluginName, "settings", this.mySettings);
-        };
+        settings.forEach(({ key, label, type }) => {
+            const div = document.createElement("div");
+            div.style.cssText = "display: flex; flex-direction: column; gap: 5px;";
 
-        panel.appendChild(triggerKeySetting);
-        panel.appendChild(shiftKeySetting);
-        panel.appendChild(showButtonSetting);
+            if (type === "checkbox") {
+                const checkbox = document.createElement("input");
+                checkbox.type = "checkbox";
+                checkbox.checked = this.mySettings[key];
+                checkbox.onchange = (e) => {
+                    this.mySettings[key] = e.target.checked;
+                    BdApi.Data.save(this.pluginName, "settings", this.mySettings);
+                    this.log(`Setting ${key} = ${e.target.checked}`);
+                };
+
+                const labelEl = document.createElement("label");
+                labelEl.style.color = "#dcddde";
+                labelEl.appendChild(checkbox);
+                labelEl.appendChild(document.createTextNode(" " + label));
+                div.appendChild(labelEl);
+            } else {
+                const labelEl = document.createElement("label");
+                labelEl.textContent = label + ":";
+                labelEl.style.display = "block";
+                labelEl.style.marginBottom = "5px";
+                labelEl.style.color = "#dcddde";
+                div.appendChild(labelEl);
+
+                const input = document.createElement("input");
+                input.type = "text";
+                input.value = this.mySettings[key];
+                input.style.cssText = `
+                    width: 100%;
+                    padding: 8px;
+                    background: #202225;
+                    border: 1px solid #202225;
+                    border-radius: 3px;
+                    color: #fff;
+                    font-size: 14px;
+                `;
+                input.onchange = (e) => {
+                    this.mySettings[key] = e.target.value;
+                    BdApi.Data.save(this.pluginName, "settings", this.mySettings);
+                    this.log(`Setting ${key} = ${e.target.value}`);
+                };
+                div.appendChild(input);
+            }
+
+            settingsDiv.appendChild(div);
+        });
+
+        panel.appendChild(settingsDiv);
+
+        const info = document.createElement("div");
+        info.style.cssText = "margin-top: 20px; padding: 12px; background: #2f3136; border-radius: 5px; color: #b9bbbe; font-size: 13px;";
+        info.innerHTML = `
+            <strong>How to use:</strong><br>
+            1. Join a voice channel<br>
+            2. Press <strong>${this.mySettings.triggerKey.toUpperCase()}</strong> to toggle FakeDeafen<br>
+            3. Click unmute/undeafen in Discord UI - you'll appear deaf to others but can hear and talk<br>
+            4. Press <strong>${this.mySettings.triggerKey.toUpperCase()}</strong> again to disable<br>
+            <br>
+            <em>✅ Fixed ETF boolean encoding for Canary</em>
+        `;
+        panel.appendChild(info);
 
         return panel;
     }
