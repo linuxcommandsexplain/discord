@@ -1,7 +1,7 @@
 /**
  * @name FakeDeafen
- * @description Lets you appear deafened while still being able to hear and talk (blocks VOICE_STATE updates but lets channel moves pass)
- * @version 1.0
+ * @description Lets you appear deafened while still being able to hear and talk (universal ETF+JSON support)
+ * @version 1.1
  * @author Sleek
  * @authorId 153253064231354368
  * @invite B5kBdSsED2
@@ -16,6 +16,7 @@ module.exports = class FakeDeafen {
         this.pluginName = "FakeDeafen";
         this.mySettings = {
             shiftKeyRequired: false,
+            ctrlKeyRequired: false,
             triggerKey: "w",
             debugMode: false
         };
@@ -69,117 +70,106 @@ module.exports = class FakeDeafen {
         const self = this;
 
         WebSocket.prototype.send = function(data) {
-            let payload = data;
+            if (!self.isActive) {
+                return self.originalWebSocketSend.call(this, data);
+            }
+
             let modified = false;
 
-            if (!self.isActive) {
-                return self.originalWebSocketSend.call(this, payload);
-            }
+            if (typeof data === "string") {
+                try {
+                    const parsed = JSON.parse(data);
+                    if (parsed.op === 4 && parsed.d) {
+                        self.log("🎯 VOICE_STATE_UPDATE detected (JSON)", parsed.d);
+                        
+                        if (parsed.d.self_mute === false) {
+                            parsed.d.self_mute = true;
+                            self.log("📍 Changed self_mute: false → true");
+                            modified = true;
+                        }
+                        if (parsed.d.self_deaf === false) {
+                            parsed.d.self_deaf = true;
+                            self.log("📍 Changed self_deaf: false → true");
+                            modified = true;
+                        }
 
-            try {
-                // Handle ETF format (ArrayBuffer)
-                if (payload instanceof ArrayBuffer) {
-                    const view = new Uint8Array(payload);
-                    
-                    // Check for ETF magic bytes
-                    if (view[0] === 0x83 && view[1] === 0x74) {
-                        // Look for op:4 pattern (0x6f 0x70 0x61 0x04)
-                        for (let i = 0; i < view.length - 20; i++) {
-                            if (view[i] === 0x6f && view[i+1] === 0x70 && 
-                                view[i+2] === 0x61 && view[i+3] === 0x04) {
-                                
-                                self.log("🎯 VOICE_STATE_UPDATE detected (ETF)");
-                                
-                                // Search for "self_mute" followed by atom "false" (0x73 0x05 "false")
-                                for (let j = i; j < view.length - 16; j++) {
-                                    // Pattern: self_mute + s(5) + "false"
-                                    if (view[j] === 0x73 && view[j+1] === 0x65 && view[j+2] === 0x6c && 
-                                        view[j+3] === 0x66 && view[j+4] === 0x5f && view[j+5] === 0x6d &&
-                                        view[j+6] === 0x75 && view[j+7] === 0x74 && view[j+8] === 0x65 &&
-                                        view[j+9] === 0x73 && view[j+10] === 0x05 &&
-                                        view[j+11] === 0x66 && view[j+12] === 0x61 && view[j+13] === 0x6c &&
-                                        view[j+14] === 0x73 && view[j+15] === 0x65) {
+                        if (modified) {
+                            data = JSON.stringify(parsed);
+                            self.log("✅ Modified JSON packet", parsed.d);
+                        }
+                    }
+                } catch (e) {
+                    self.log("⚠️ JSON parse error:", e);
+                }
+            } else if (data instanceof ArrayBuffer) {
+                const view = new Uint8Array(data);
+                
+                if (view[0] === 0x83 && view[1] === 0x74) {
+                    for (let i = 0; i < view.length - 4; i++) {
+                        if (view[i] === 0x6f && view[i+1] === 0x70 && 
+                            view[i+2] === 0x61 && view[i+3] === 0x04) {
+                            
+                            self.log("🎯 VOICE_STATE_UPDATE detected (ETF)");
+                            const mutable = new Uint8Array(view);
+                            
+                            // Chercher "self_mute" + false
+                            for (let j = i; j < mutable.length - 20; j++) {
+                                if (mutable[j] === 0x73 && mutable[j+1] === 0x65 && 
+                                    mutable[j+2] === 0x6c && mutable[j+3] === 0x66 && 
+                                    mutable[j+4] === 0x5f && mutable[j+5] === 0x6d &&
+                                    mutable[j+6] === 0x75 && mutable[j+7] === 0x74 && 
+                                    mutable[j+8] === 0x65) {
+                                    
+                                    // Vérifier si suivi de "false" (0x73 0x05 "false")
+                                    if (mutable[j+9] === 0x73 && mutable[j+10] === 0x05 &&
+                                        mutable[j+11] === 0x66 && mutable[j+12] === 0x61 && 
+                                        mutable[j+13] === 0x6c && mutable[j+14] === 0x73 && 
+                                        mutable[j+15] === 0x65) {
                                         
                                         self.log("📍 Found self_mute=false, changing to true");
-                                        // Replace "false" (0x73 0x05 0x66...) with "true" (0x73 0x04 0x74...)
-                                        const modifiable = new Uint8Array(view);
-                                        modifiable[j+10] = 0x04; // length 4 instead of 5
-                                        modifiable[j+11] = 0x74; // 't'
-                                        modifiable[j+12] = 0x72; // 'r'
-                                        modifiable[j+13] = 0x75; // 'u'
-                                        modifiable[j+14] = 0x65; // 'e'
-                                        // Shift remaining bytes left by 1
-                                        for (let k = j + 15; k < modifiable.length - 1; k++) {
-                                            modifiable[k] = modifiable[k + 1];
-                                        }
-                                        payload = modifiable.buffer.slice(0, modifiable.length - 1);
+                                        mutable[j+10] = 0x04;  // Longueur 5 → 4
+                                        mutable[j+11] = 0x74;  // 't'
+                                        mutable[j+12] = 0x72;  // 'r'
+                                        mutable[j+13] = 0x75;  // 'u'
+                                        mutable[j+14] = 0x65;  // 'e'
                                         modified = true;
                                     }
                                 }
                                 
-                                // Search for "self_deaf" followed by atom "false"
-                                const currentView = new Uint8Array(payload);
-                                for (let j = i; j < currentView.length - 16; j++) {
-                                    if (currentView[j] === 0x73 && currentView[j+1] === 0x65 && currentView[j+2] === 0x6c && 
-                                        currentView[j+3] === 0x66 && currentView[j+4] === 0x5f && currentView[j+5] === 0x64 &&
-                                        currentView[j+6] === 0x65 && currentView[j+7] === 0x61 && currentView[j+8] === 0x66 &&
-                                        currentView[j+9] === 0x73 && currentView[j+10] === 0x05 &&
-                                        currentView[j+11] === 0x66 && currentView[j+12] === 0x61 && currentView[j+13] === 0x6c &&
-                                        currentView[j+14] === 0x73 && currentView[j+15] === 0x65) {
+                                // Chercher "self_deaf" + false
+                                if (mutable[j] === 0x73 && mutable[j+1] === 0x65 && 
+                                    mutable[j+2] === 0x6c && mutable[j+3] === 0x66 && 
+                                    mutable[j+4] === 0x5f && mutable[j+5] === 0x64 &&
+                                    mutable[j+6] === 0x65 && mutable[j+7] === 0x61 && 
+                                    mutable[j+8] === 0x66) {
+                                    
+                                    if (mutable[j+9] === 0x73 && mutable[j+10] === 0x05 &&
+                                        mutable[j+11] === 0x66 && mutable[j+12] === 0x61 && 
+                                        mutable[j+13] === 0x6c && mutable[j+14] === 0x73 && 
+                                        mutable[j+15] === 0x65) {
                                         
                                         self.log("📍 Found self_deaf=false, changing to true");
-                                        const modifiable = new Uint8Array(currentView);
-                                        modifiable[j+10] = 0x04;
-                                        modifiable[j+11] = 0x74;
-                                        modifiable[j+12] = 0x72;
-                                        modifiable[j+13] = 0x75;
-                                        modifiable[j+14] = 0x65;
-                                        for (let k = j + 15; k < modifiable.length - 1; k++) {
-                                            modifiable[k] = modifiable[k + 1];
-                                        }
-                                        payload = modifiable.buffer.slice(0, modifiable.length - 1);
+                                        mutable[j+10] = 0x04;
+                                        mutable[j+11] = 0x74;
+                                        mutable[j+12] = 0x72;
+                                        mutable[j+13] = 0x75;
+                                        mutable[j+14] = 0x65;
                                         modified = true;
                                     }
                                 }
-                                
-                                if (modified) {
-                                    self.log("✅ Modified ETF packet");
-                                }
-                                break;
                             }
-                        }
-                    }
-                }
-                // Handle JSON/zlib format (String/Blob)
-                else if (typeof payload === "string") {
-                    try {
-                        const parsed = JSON.parse(payload);
-                        if (parsed.op === 4 && parsed.d) {
-                            self.log("🎯 VOICE_STATE_UPDATE detected (JSON)");
-                            if (parsed.d.self_mute === false) {
-                                parsed.d.self_mute = true;
-                                modified = true;
-                                self.log("📍 Changed self_mute: false → true");
-                            }
-                            if (parsed.d.self_deaf === false) {
-                                parsed.d.self_deaf = true;
-                                modified = true;
-                                self.log("📍 Changed self_deaf: false → true");
-                            }
+                            
                             if (modified) {
-                                payload = JSON.stringify(parsed);
-                                self.log("✅ Modified JSON packet");
+                                data = mutable.buffer;
+                                self.log("✅ Modified ETF packet");
                             }
+                            break;
                         }
-                    } catch (e) {
-                        // Not JSON, ignore
                     }
                 }
-            } catch (e) {
-                self.log("❌ Error modifying packet:", e);
             }
 
-            return self.originalWebSocketSend.call(this, payload);
+            return self.originalWebSocketSend.call(this, data);
         };
 
         this.log("WebSocket patched successfully");
@@ -194,69 +184,71 @@ module.exports = class FakeDeafen {
     }
 
     handleKeyDown(e) {
-        if (this.mySettings.shiftKeyRequired && !e.shiftKey) {
+        if (e.key.toLowerCase() !== this.mySettings.triggerKey.toLowerCase()) {
             return;
         }
 
-        if (e.key.toLowerCase() === this.mySettings.triggerKey.toLowerCase()) {
-            this.isActive = !this.isActive;
-            this.updateIndicator();
-            BdApi.UI.showToast(
-                `FakeDeafen ${this.isActive ? "enabled" : "disabled"}`,
-                { type: this.isActive ? "success" : "info" }
-            );
-            this.log(`FakeDeafen ${this.isActive ? "enabled" : "disabled"}`);
+        // Vérifier les modificateurs requis
+        if (this.mySettings.shiftKeyRequired && !e.shiftKey) {
+            return;
         }
+        if (this.mySettings.ctrlKeyRequired && !e.ctrlKey) {
+            return;
+        }
+
+        e.preventDefault();
+        e.stopPropagation();
+
+        this.isActive = !this.isActive;
+
+        if (this.indicator) {
+            this.indicator.style.display = this.isActive ? "flex" : "none";
+        }
+
+        const status = this.isActive ? "ENABLED" : "DISABLED";
+        BdApi.UI.showToast(`FakeDeafen ${status}`, { 
+            type: this.isActive ? "success" : "info" 
+        });
+        this.log(`FakeDeafen toggled: ${status}`);
     }
 
     createIndicator() {
-        if (this.indicator) return;
-
         this.indicator = document.createElement("div");
-        this.indicator.id = "fakedeafen-indicator";
-        this.indicator.textContent = "FD";
+        this.indicator.textContent = "🥷 Fake Deafen ENABLED !";
         this.indicator.style.cssText = `
             position: fixed;
-            top: 10px;
+            top: 80px;
             right: 10px;
-            width: 40px;
-            height: 40px;
-            background: #43b581;
+            padding: 12px 24px;
+            background: rgba(237, 66, 69, 0.95);
             color: white;
-            border-radius: 50%;
+            border-radius: 5px;
             display: none;
-            align-items: center;
-            justify-content: center;
-            font-weight: bold;
-            font-size: 14px;
             z-index: 9999;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.3);
+            box-shadow: 0 2px 10px rgba(237, 66, 69, 0.5);
             cursor: pointer;
             user-select: none;
+            white-space: nowrap;
+            font-weight: bold;
+            font-size: 16px;
+            pointer-events: auto;
         `;
-        
+
         this.indicator.addEventListener("click", () => {
-            this.isActive = !this.isActive;
-            this.updateIndicator();
-            BdApi.UI.showToast(
-                `FakeDeafen ${this.isActive ? "enabled" : "disabled"}`,
-                { type: this.isActive ? "success" : "info" }
-            );
+            this.isActive = false;
+            this.indicator.style.display = "none";
+            BdApi.UI.showToast("FakeDeafen DISABLED", { type: "info"});
+            this.log("FakeDeafen disabled via indicator click");
         });
 
         document.body.appendChild(this.indicator);
         this.log("Indicator created");
     }
 
-    updateIndicator() {
-        if (this.indicator) {
-            this.indicator.style.display = this.isActive ? "flex" : "none";
-        }
-    }
 
     removeIndicator() {
-        if (this.indicator) {
-            this.indicator.remove();
+        if (this.indicator && this.indicator.parentNode) {
+            this.indicator.parentNode.removeChild(this.indicator);
             this.indicator = null;
             this.log("Indicator removed");
         }
@@ -264,25 +256,32 @@ module.exports = class FakeDeafen {
 
     getSettingsPanel() {
         const panel = document.createElement("div");
-        panel.style.padding = "20px";
+        panel.style.cssText = "padding: 16px; background: #2f3136; border-radius: 8px;";
+
+        const title = document.createElement("h2");
+        title.textContent = "FakeDeafen Settings";
+        title.style.cssText = "color: #fff; margin-bottom: 16px; font-size: 20px;";
+        panel.appendChild(title);
 
         const settingsDiv = document.createElement("div");
-        settingsDiv.style.cssText = "display: flex; flex-direction: column; gap: 15px;";
+        settingsDiv.style.cssText = "display: flex; flex-direction: column; gap: 16px;";
 
         const settings = [
             { key: "shiftKeyRequired", label: "Require Shift key", type: "checkbox" },
+            { key: "ctrlKeyRequired", label: "Require Ctrl key", type: "checkbox" },
             { key: "triggerKey", label: "Trigger key", type: "text" },
             { key: "debugMode", label: "Debug mode", type: "checkbox" }
         ];
 
         settings.forEach(({ key, label, type }) => {
             const div = document.createElement("div");
-            div.style.cssText = "display: flex; flex-direction: column; gap: 5px;";
+            div.style.cssText = "display: flex; flex-direction: column;";
 
             if (type === "checkbox") {
                 const checkbox = document.createElement("input");
                 checkbox.type = "checkbox";
                 checkbox.checked = this.mySettings[key];
+                checkbox.style.cssText = "margin-right: 8px; cursor: pointer;";
                 checkbox.onchange = (e) => {
                     this.mySettings[key] = e.target.checked;
                     BdApi.Data.save(this.pluginName, "settings", this.mySettings);
@@ -290,16 +289,14 @@ module.exports = class FakeDeafen {
                 };
 
                 const labelEl = document.createElement("label");
-                labelEl.style.color = "#dcddde";
+                labelEl.style.cssText = "display: flex; align-items: center; cursor: pointer; color: #dcddde;";
                 labelEl.appendChild(checkbox);
                 labelEl.appendChild(document.createTextNode(" " + label));
                 div.appendChild(labelEl);
             } else {
                 const labelEl = document.createElement("label");
                 labelEl.textContent = label + ":";
-                labelEl.style.display = "block";
-                labelEl.style.marginBottom = "5px";
-                labelEl.style.color = "#dcddde";
+                labelEl.style.cssText = "display: block; margin-bottom: 5px; color: #dcddde;";
                 div.appendChild(labelEl);
 
                 const input = document.createElement("input");
