@@ -1,4 +1,7 @@
-# Edited by Sleek, original project: https://github.com/hmerritt/discord-encryption
+# Edited by Sleek, original project:
+download here: https://raw.githubusercontent.com/s4dic/discord/refs/heads/main/BetterDiscord%20Plugins/encryption/encryption.plugin.js
+
+Original projet by hmerritt: https://github.com/hmerritt/discord-encryption
 # Discord Encryption
 
 > We're back baby :)
