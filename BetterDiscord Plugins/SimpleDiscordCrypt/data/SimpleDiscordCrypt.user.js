@@ -1,13 +1,13 @@
 // ==UserScript==
-// @name         SimpleDiscordCrypt
-// @namespace    https://gitlab.com/An0/SimpleDiscordCrypt
-// @version      1.7.4.0
+// @name         SimpleDiscordCryptV2
+// @namespace    https://gitlab.com/n01sed/SimpleDiscordCryptV2
+// @version      1.7.5.0
 // @description  I hope people won't start calling this SDC ^_^
 // @author       An0
 // @license      LGPLv3 - https://www.gnu.org/licenses/lgpl-3.0.txt
-// @downloadURL  https://gitlab.com/An0/SimpleDiscordCrypt/raw/master/SimpleDiscordCrypt.user.js
-// @updateURL    https://gitlab.com/An0/SimpleDiscordCrypt/raw/master/SimpleDiscordCrypt.meta.js
-// @icon         https://gitlab.com/An0/SimpleDiscordCrypt/raw/master/logo.png
+// @downloadURL  https://gitlab.com/n01sed/SimpleDiscordCryptV2/raw/master/SimpleDiscordCrypt.user.js
+// @updateURL    https://gitlab.com/n01sed/SimpleDiscordCryptV2/raw/master/SimpleDiscordCrypt.meta.js
+// @icon         https://gitlab.com/n01sed/SimpleDiscordCryptV2/raw/master/logo.png
 // @match        https://*.discord.com/channels/*
 // @match        https://*.discord.com/activity
 // @match        https://*.discord.com/login*
@@ -42,7 +42,26 @@
   const IgnoreDiffKeyAge = 7 * 24 * 60 * 60 * 1000;
   const DiffKeyTrigger = 10;
 
-  const HeaderBarSelector = `div[class^=chat] section[class^=title]`;
+  // Sélecteurs CSS mis à jour pour Discord Canary 2026
+  // Essayer plusieurs patterns car Discord change souvent sa structure
+  const HeaderBarSelectors = [
+    `section[class*=headerBar]`,  // Pattern Discord Canary 2026
+    `div[class*=chat] section[class*=title]`,  // Pattern moderne
+    `section[class*=title][class*=container]`,  // Variante
+    `header[class*=container][class*=title]`,   // Header variant
+    `div[class^=chat] section[class^=title]`,   // Pattern ancien (fallback)
+  ];
+
+  const HeaderBarChannelNameSelectors = [
+    `h1[class*=title]`,  // Discord Canary 2026 - h1 avec class contenant "title"
+    `h3[class*=title]`,  // Ou h3
+    `div[class*=title][class*=text]`,
+    `div[class*=titleWrapper] div[class*=title]`,
+    `div[class*=channelName]`,
+    `span[class*=title]`,
+  ];
+
+  const HeaderBarSelector = `div[class^=chat] section[class^=title]`;  // Gardé pour compatibilité
   const HeaderBarChildrenSelector = `${HeaderBarSelector} > div[class^=upperContainer] > div[class^=children]`;
   const HeaderBarChannelNameSelector = `${HeaderBarChildrenSelector} div[class*=titleWrapper], ${HeaderBarChildrenSelector} div[class*=channelName]`;
   const BackdropSelector = `div[class*=backdrop]`;
@@ -604,18 +623,15 @@ ${HeaderBarSelector}, ${HeaderBarChildrenSelector} { overflow: visible !importan
         let listItem = document.createElement('div');
         listItem.innerHTML = `<div>
                     <h6 class="SDC_DESCRIPTOR">${HtmlEscape(
-                      key.descriptor
-                    )} <a class="SDC_EDITDESCRIPTOR sdc-edit"></a></h6>
+          key.descriptor
+        )} <a class="SDC_EDITDESCRIPTOR sdc-edit"></a></h6>
                     <p>${Utils.FormatTime(key.lastseen)}</p>
                 </div>
-                <div class="sdc-listbox sdc-listcheckbox"><label><input type="checkbox" class="SDC_SETHIDDEN" style="display:none"${
-                  key.hidden ? ' checked' : ''
-                }${
-          key.type !== 'GROUP' ? ' disabled' : ''
-        }><p></p></label></div>
-                <div class="sdc-listbox"><button type="button" class="SDC_DELETE sdc-rbtn" style="margin:0 4px"${
-                  key.protected ? ' disabled' : ''
-                }>Delete</button></div>`;
+                <div class="sdc-listbox sdc-listcheckbox"><label><input type="checkbox" class="SDC_SETHIDDEN" style="display:none"${key.hidden ? ' checked' : ''
+          }${key.type !== 'GROUP' ? ' disabled' : ''
+          }><p></p></label></div>
+                <div class="sdc-listbox"><button type="button" class="SDC_DELETE sdc-rbtn" style="margin:0 4px"${key.protected ? ' disabled' : ''
+          }>Delete</button></div>`;
         if (key.trusted)
           listItem.getElementsByClassName('SDC_DESCRIPTOR')[0].style.color =
             BaseColor;
@@ -710,8 +726,8 @@ ${HeaderBarSelector}, ${HeaderBarChildrenSelector} { overflow: visible !importan
         let listItem = document.createElement('div');
         listItem.innerHTML = `<div>
                     <h6 class="SDC_DESCRIPTOR">${HtmlEscape(
-                      channel.descriptor
-                    )}</h6>
+          channel.descriptor
+        )}</h6>
                     <p>${Utils.FormatTime(channel.lastseen)}</p>
                 </div>
                 <div class="sdc-listbox"><button type="button" class="SDC_DELETE sdc-rbtn" style="margin:0 4px">Delete</button></div>`;
@@ -764,8 +780,8 @@ ${HeaderBarSelector}, ${HeaderBarChildrenSelector} { overflow: visible !importan
         let listItem = document.createElement('div');
         listItem.innerHTML = `<div>
                     <h6 class="SDC_DESCRIPTOR">${HtmlEscape(
-                      key.descriptor
-                    )}</h6>
+          key.descriptor
+        )}</h6>
                     <p>${Utils.FormatTime(key.lastseen)}</p>
                 </div>
                 <div class="sdc-listbox"><button type="button" class="SDC_SHARE sdc-wbtn" style="margin:0 4px">Share</button></div>`;
@@ -785,9 +801,9 @@ ${HeaderBarSelector}, ${HeaderBarChildrenSelector} { overflow: visible !importan
     },
   };
   const MenuBar = {
-    menuBarCss: `.SDC_TOGGLE{opacity:.6;fill:#fff;height:24px;cursor:pointer;margin-left:-5px}.SDC_TOGGLE:hover{opacity:.8}`,
-    toggleOnButtonHtml: `<div class="sdc" style="position:relative"><svg class="SDC_TOGGLE" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 36 36"><path d="M18 0c-4.612 0-8.483 3.126-9.639 7.371l3.855 1.052C12.91 5.876 15.233 4 18 4c3.313 0 6 2.687 6 6v10h4V10c0-5.522-4.477-10-10-10z"/><path d="M31 32c0 2.209-1.791 4-4 4H9c-2.209 0-4-1.791-4-4V20c0-2.209 1.791-4 4-4h18c2.209 0 4 1.791 4 4v12z"/></svg><p class="sdc-tooltip">Encrypt Channel</p></div>`,
-    toggleOffButtonHtml: `<div class="sdc" style="position:relative"><svg class="SDC_TOGGLE" style="opacity:1" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 36 36"><path d="M18 3C12.477 3 8 7.477 8 13v10h4V13c0-3.313 2.686-6 6-6s6 2.687 6 6v10h4V13c0-5.523-4.477-10-10-10z"/><path d="M31 32c0 2.209-1.791 4-4 4H9c-2.209 0-4-1.791-4-4V20c0-2.209 1.791-4 4-4h18c2.209 0 4 1.791 4 4v12z"/><p class="sdc-tooltip">Disable Encryption</p></svg>`,
+    menuBarCss: `.SDC_TOGGLE{opacity:.6;fill:#fff;height:24px;cursor:pointer;margin-left:-5px}.SDC_TOGGLE:hover{opacity:.8}.sdc-tooltip{pointer-events:none}.sdc-menu{z-index:10000}`,
+    toggleOnButtonHtml: `<div class="sdc" style="position:relative;display:inline-block"><svg class="SDC_TOGGLE" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 36 36"><path d="M18 0c-4.612 0-8.483 3.126-9.639 7.371l3.855 1.052C12.91 5.876 15.233 4 18 4c3.313 0 6 2.687 6 6v10h4V10c0-5.522-4.477-10-10-10z"/><path d="M31 32c0 2.209-1.791 4-4 4H9c-2.209 0-4-1.791-4-4V20c0-2.209 1.791-4 4-4h18c2.209 0 4 1.791 4 4v12z"/></svg><p class="sdc-tooltip">Encrypt Channel</p></div>`,
+    toggleOffButtonHtml: `<div class="sdc" style="position:relative;display:inline-block"><svg class="SDC_TOGGLE" style="opacity:1" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 36 36"><path d="M18 3C12.477 3 8 7.477 8 13v10h4V13c0-3.313 2.686-6 6-6s6 2.687 6 6v10h4V13c0-5.523-4.477-10-10-10z"/><path d="M31 32c0 2.209-1.791 4-4 4H9c-2.209 0-4-1.791-4-4V20c0-2.209 1.791-4 4-4h18c2.209 0 4 1.791 4 4v12z"/></svg><p class="sdc-tooltip">Disable Encryption</p></div>`,
     keySelectHtml: `<div class="sdc sdc-select" style="margin:-3px 0 -2px 5px"><label style="min-width:200px;max-width:300px;height:30px"><input class="SDC_DROPDOWN sdc-hidden" type="checkbox"><p class="SDC_SELECTED" style="justify-content:center;text-align:center"></p></label><div class="SDC_OPTIONS" style="visibility:hidden"></div></div>`,
     toggledOnCss: `${ChatInputSelector}{box-shadow:0 0 0 1px ${BaseColor} !important}`,
     menuHtml: `<button type="button" class="SDC_FOCUS sdc-hidden"></button>
@@ -919,9 +935,11 @@ ${HeaderBarSelector}, ${HeaderBarChildrenSelector} { overflow: visible !importan
         e
       ) => {
         e.preventDefault();
+        e.stopPropagation();
         menu.style.left = e.clientX + 'px';
         menu.style.top = e.clientY + 'px';
         menu.style.visibility = 'visible';
+        menu.style.display = 'block';
         menuFocus.focus();
       };
       menuFocus.onblur = () => {
@@ -929,7 +947,39 @@ ${HeaderBarSelector}, ${HeaderBarChildrenSelector} { overflow: visible !importan
       };
 
       this.Update = function (isRetry) {
-        let titleElement = document.querySelector(HeaderBarChannelNameSelector);
+        // Essayer plusieurs sélecteurs pour trouver titleElement
+        let titleElement = null;
+
+        // Méthode 1 : Sélecteur original
+        titleElement = document.querySelector(HeaderBarChannelNameSelector);
+
+        // Méthode 2 : Essayer les nouveaux sélecteurs
+        if (!titleElement) {
+          for (const selector of HeaderBarChannelNameSelectors) {
+            titleElement = document.querySelector(selector);
+            if (titleElement) {
+              break;
+            }
+          }
+        }
+
+        // Méthode 3 : Chercher dans les HeaderBar possibles
+        if (!titleElement) {
+          for (const headerSelector of HeaderBarSelectors) {
+            const header = document.querySelector(headerSelector);
+            if (header) {
+              // Chercher un titre dedans
+              for (const nameSelector of HeaderBarChannelNameSelectors) {
+                titleElement = header.querySelector(nameSelector);
+                if (titleElement) {
+                  break;
+                }
+              }
+              if (titleElement) break;
+            }
+          }
+        }
+
         if (titleElement == null) {
           if (!isRetry) this.retries = 0;
           if (this.retries < 10) {
@@ -1199,7 +1249,7 @@ ${HeaderBarSelector}, ${HeaderBarChildrenSelector} { overflow: visible !importan
         drawRectangle('#000', 9, 26, 4, 30, -35);
 
         switch (
-          popBits(2) //left arm
+        popBits(2) //left arm
         ) {
           case 0: //up
             drawRectangle('#000', -12, -23, 4, 30, -55);
@@ -1214,7 +1264,7 @@ ${HeaderBarSelector}, ${HeaderBarChildrenSelector} { overflow: visible !importan
             drawHandEmoji(-26, -4, 15);
         }
         switch (
-          popBits(2) //right arm
+        popBits(2) //right arm
         ) {
           case 0: //up
             drawRectangle('#000', 12, -23, 4, 30, 55);
@@ -1438,7 +1488,9 @@ ${HeaderBarSelector}, ${HeaderBarChildrenSelector} { overflow: visible !importan
             }
           },
         ]);
-      } else return null;
+      } else {
+        return null;
+      }
 
       const cachedExports = new Set();
       let cachedExportsCount = 0;
@@ -1472,7 +1524,7 @@ ${HeaderBarSelector}, ${HeaderBarChildrenSelector} { overflow: visible !importan
                   .map(({ get }) => get())
                   .filter(isModuleLike)
                   .forEach(addModuleToCache);
-              } catch {}
+              } catch { }
               properties
                 .map((x) => x.value)
                 .filter(isModuleLike)
@@ -1506,9 +1558,113 @@ ${HeaderBarSelector}, ${HeaderBarChildrenSelector} { overflow: visible !importan
           propNames.every((prop) => module[prop] !== undefined)
         );
 
+      // Fonction pour explorer les exports minifiés (Z, ZP, default, etc.)
+      const getAllExports = (module) => {
+        if (!module || typeof module !== 'object') return [module];
+        const exports = [module];
+
+        // Exports communs minifiés
+        if (module.Z) exports.push(module.Z);
+        if (module.ZP) exports.push(module.ZP);
+        if (module.default) exports.push(module.default);
+
+        // Exports avec une seule clé (pattern de minification)
+        const keys = Object.keys(module);
+        if (keys.length === 1 && typeof module[keys[0]] === 'object') {
+          exports.push(module[keys[0]]);
+        }
+
+        return exports;
+      };
+
+      // Recherche robuste avec scoring
+      const findModuleRobust = (patterns) => {
+        const cache = webpackExports?.c;
+        if (cache == null) return null;
+
+        const cacheItems = Object.values(cache);
+        if (cacheItems.length !== cachedExportsCount) {
+          addModulesToCache(cacheItems);
+          cachedExportsCount = cacheItems.length;
+        }
+
+        let bestMatch = null;
+        let bestScore = 0;
+        let bestPath = '';
+
+        for (const module of moduleCache.values()) {
+          const allExports = getAllExports(module);
+
+          for (let i = 0; i < allExports.length; i++) {
+            const exp = allExports[i];
+            if (!exp || typeof exp !== 'object') continue;
+
+            let score = 0;
+            let matchedPattern = null;
+            const path = i === 0 ? '' : (module.Z === exp ? '.Z' : module.ZP === exp ? '.ZP' : module.default === exp ? '.default' : `.${Object.keys(module).find(k => module[k] === exp)}`);
+
+            // Tester chaque pattern
+            for (const pattern of patterns) {
+              if (pattern.props && Array.isArray(pattern.props)) {
+                // Chercher par propriétés
+                const matches = pattern.props.filter(prop => exp[prop] !== undefined);
+                if (matches.length > 0) {
+                  score += matches.length * 10;
+                  matchedPattern = pattern;
+                }
+              }
+
+              if (pattern.filter && typeof pattern.filter === 'function') {
+                // Chercher par fonction filter
+                try {
+                  if (pattern.filter(exp)) {
+                    score += 50;
+                    matchedPattern = pattern;
+                  }
+                } catch (e) { }
+              }
+
+              if (pattern.displayName && exp.displayName === pattern.displayName) {
+                score += 100;
+                matchedPattern = pattern;
+              }
+
+              if (pattern.prototype && exp.prototype) {
+                const protoProps = pattern.prototype.filter(prop => exp.prototype[prop] !== undefined);
+                if (protoProps.length > 0) {
+                  score += protoProps.length * 20;
+                  matchedPattern = pattern;
+                }
+              }
+            }
+
+            if (score > bestScore) {
+              bestScore = score;
+              bestMatch = { module: exp, original: module, path, pattern: matchedPattern };
+              bestPath = path;
+            }
+          }
+        }
+
+        return bestMatch;
+      };
+
+      // Logger exhaustif d'un module
+      const deepLogModule = (module, name) => {
+        if (!module) return;
+
+        // Analyser les fonctions
+        const funcs = Object.keys(module).filter(k => typeof module[k] === 'function');
+
+        // Analyser les sous-exports
+      };
+
       return (this.cachedWebpack = {
         findModule,
         findModuleByUniqueProperties,
+        findModuleRobust,
+        deepLogModule,
+        getAllExports,
       });
     },
   };
@@ -1534,127 +1690,579 @@ ${HeaderBarSelector}, ${HeaderBarChildrenSelector} { overflow: visible !importan
       return 0;
     }
 
-    const { findModule, findModuleByUniqueProperties } = webpackUtil;
+    const { findModule, findModuleByUniqueProperties, findModuleRobust, deepLogModule, getAllExports } = webpackUtil;
 
     let modules = {};
 
-    modules.MessageQueue = findModuleByUniqueProperties([
-      'enqueue',
-      'handleSend',
-      'handleEdit',
-    ]);
-    if (modules.MessageQueue == null) {
-      if (final) Utils.Error('MessageQueue not found.');
-      return 0;
+    // Utiliser l'API BetterDiscord si disponible (gère automatiquement les exports minifiés)
+    const useBdApi = typeof BdApi !== 'undefined' && BdApi.Webpack;
+
+    // Debug: Accéder directement au cache webpack et chercher les modules Discord
+    const webpackCache = Discord.window.webpackChunkdiscord_app?.push([[Symbol()], {}, (req) => req.c]);
+
+    const foundModules = { message: [], user: [], channel: [], dispatcher: [], upload: [] };
+
+    if (webpackCache) {
+      const cacheKeys = Object.keys(webpackCache);
+
+      let analyzed = 0;
+      for (const key of cacheKeys) {
+        const mod = webpackCache[key];
+        if (mod && mod.exports) {
+          const exp = mod.exports;
+
+          // Regarder dans l'export principal et les sous-propriétés
+          const checkExport = (obj, path = '') => {
+            if (!obj || typeof obj !== 'object') return;
+
+            const keys = Object.keys(obj);
+
+            // Chercher des fonctions de message
+            const messageFuncs = keys.filter(k => {
+              const val = obj[k];
+              return typeof val === 'function' && (
+                k === 'sendMessage' || k === 'editMessage' || k === 'deleteMessage' ||
+                k === 'createMessage' || k === 'receiveMessage'
+              );
+            });
+            if (messageFuncs.length > 0) {
+              foundModules.message.push({ id: key, path, funcs: messageFuncs, keys: keys.slice(0, 20), obj });
+            }
+
+            // Chercher des fonctions user
+            const userFuncs = keys.filter(k => {
+              const val = obj[k];
+              return typeof val === 'function' && (
+                k === 'getUser' || k === 'getUsers' || k === 'getCurrentUser' || k === 'findByTag'
+              );
+            });
+            if (userFuncs.length > 0) {
+              foundModules.user.push({ id: key, path, funcs: userFuncs, keys: keys.slice(0, 20), obj });
+            }
+
+            // Chercher des fonctions channel
+            const channelFuncs = keys.filter(k => {
+              const val = obj[k];
+              return typeof val === 'function' && (
+                k === 'getChannel' || k === 'getDMFromUserId' || k === 'getChannelId'
+              );
+            });
+            if (channelFuncs.length > 0) {
+              foundModules.channel.push({ id: key, path, funcs: channelFuncs, keys: keys.slice(0, 20), obj });
+            }
+
+            // Chercher dispatcher
+            if (keys.includes('dispatch') && typeof obj.dispatch === 'function') {
+              foundModules.dispatcher.push({ id: key, path, keys: keys.slice(0, 20), obj });
+            }
+
+            // Chercher upload
+            const uploadFuncs = keys.filter(k => {
+              const val = obj[k];
+              return typeof val === 'function' && (
+                k === 'upload' || k === 'instantBatchUpload' || k === 'uploadFiles'
+              );
+            });
+            if (uploadFuncs.length > 0) {
+              foundModules.upload.push({ id: key, path, funcs: uploadFuncs, keys: keys.slice(0, 20), obj });
+            }
+          };
+
+          checkExport(exp, '');
+
+          // Aussi vérifier les sous-exports (exp.Z, exp.default, etc.)
+          if (exp.Z) checkExport(exp.Z, '.Z');
+          if (exp.ZP) checkExport(exp.ZP, '.ZP');
+          if (exp.default) checkExport(exp.default, '.default');
+
+          analyzed++;
+        }
+
+        // Limit pour performance
+        if (analyzed > 5000 && Object.values(foundModules).some(arr => arr.length > 0)) break;
+      }
     }
 
-    modules.MessageDispatcher = findModuleByUniqueProperties([
-      'dispatch',
-      'wait',
-    ]);
-    if (modules.MessageDispatcher == null) {
-      if (final) Utils.Error('MessageDispatcher not found.');
-      return 0;
+    // Debug: Chercher les nouveaux modules Discord (ActionCreators, Stores, etc.)
+    const discordModules = [];
+    let moduleCount = 0;
+
+    findModule((module) => {
+      moduleCount++;
+      if (typeof module === 'object' && module !== null) {
+        const moduleKeys = Object.keys(module);
+
+        // Chercher des fonctions qui semblent liées aux messages
+        const messageFuncs = moduleKeys.filter(key => {
+          const keyLower = key.toLowerCase();
+          return (keyLower.includes('sendmessage') ||
+            keyLower.includes('editmessage') ||
+            keyLower.includes('deletemessage') ||
+            (keyLower.includes('send') && keyLower.includes('message')) ||
+            (keyLower.includes('create') && keyLower.includes('message')));
+        });
+
+        if (messageFuncs.length > 0) {
+          discordModules.push({
+            category: 'Messages',
+            funcs: messageFuncs,
+            allKeys: moduleKeys,
+            sample: module
+          });
+        }
+
+        // Chercher UserStore, ChannelStore, etc.
+        const storeFuncs = moduleKeys.filter(key => {
+          const keyLower = key.toLowerCase();
+          return (keyLower.includes('getuser') ||
+            keyLower.includes('getchannel') ||
+            keyLower.includes('currentuser'));
+        });
+
+        if (storeFuncs.length > 0) {
+          discordModules.push({
+            category: 'Stores',
+            funcs: storeFuncs,
+            allKeys: moduleKeys,
+            sample: module
+          });
+        }
+
+        // Chercher upload
+        const uploadFuncs = moduleKeys.filter(key => {
+          const keyLower = key.toLowerCase();
+          return keyLower.includes('upload') && !keyLower.includes('__wbg');
+        });
+
+        if (uploadFuncs.length > 0) {
+          discordModules.push({
+            category: 'Upload',
+            funcs: uploadFuncs,
+            allKeys: moduleKeys,
+            sample: module
+          });
+        }
+      }
+      return false;
+    });
+
+    // Recherche robuste de MessageQueue/MessageActions
+    let messageQueueMatch;
+
+    // Essayer d'abord avec BetterDiscord API
+    if (useBdApi) {
+      const bdModule = BdApi.Webpack.getByKeys('sendMessage', 'editMessage', 'deleteMessage') ||
+        BdApi.Webpack.getByKeys('enqueue', 'handleSend');
+      if (bdModule) {
+        messageQueueMatch = { module: bdModule, path: 'BdApi', pattern: 'BdApi.Webpack.getByKeys' };
+      }
     }
 
-    modules.UserCache = findModuleByUniqueProperties([
-      'getUser',
-      'getUsers',
-      'getCurrentUser',
-    ]);
-    if (modules.UserCache == null) {
-      if (final) Utils.Error('UserCache not found.');
-      return 0;
+    // Fallback sur recherche manuelle
+    if (!messageQueueMatch) {
+      messageQueueMatch = findModuleRobust([
+        { props: ['enqueue', 'handleSend', 'handleEdit'] }, // Pattern original
+        { props: ['sendMessage', 'editMessage', 'deleteMessage'] }, // Pattern moderne
+        { props: ['sendMessage', 'editMessage'] },
+        { props: ['enqueue'] },
+        { filter: (m) => typeof m.sendMessage === 'function' && typeof m.editMessage === 'function' },
+      ]);
     }
 
-    modules.ChannelCache = findModuleByUniqueProperties([
-      'getChannel',
-      'getDMFromUserId',
-    ]);
-    if (modules.ChannelCache == null) {
-      if (final) Utils.Error('ChannelCache not found.');
-      return 0;
+    if (messageQueueMatch) {
+      modules.MessageQueue = messageQueueMatch.module;
+      deepLogModule(messageQueueMatch.module, 'MessageQueue');
+    } else {
+      // Chercher manuellement dans le cache
+      const cache = Discord.window.webpackChunkdiscord_app?.push([[Symbol()], {}, (req) => req.c]);
+      if (cache) {
+        for (const [id, mod] of Object.entries(cache)) {
+          const exps = getAllExports(mod.exports);
+          for (const exp of exps) {
+            if (exp && typeof exp.sendMessage === 'function') {
+              // Candidat potentiel trouvé
+            }
+          }
+        }
+      }
     }
 
-    modules.SelectedChannelStore = findModuleByUniqueProperties([
-      'getChannelId',
-      'getVoiceChannelId',
-      'getLastSelectedChannelId',
-    ]);
-    if (modules.SelectedChannelStore == null) {
-      if (final) Utils.Error('SelectedChannelStore not found.');
-      return 0;
+    // Recherche robuste de MessageDispatcher
+    let dispatcherMatch;
+
+    // Essayer avec BetterDiscord API - le Dispatcher Flux principal
+    if (useBdApi) {
+      const bdModule = BdApi.Webpack.getByKeys('dispatch', 'register', 'subscribe') ||
+        BdApi.Webpack.getByKeys('dispatch', 'wait') ||
+        BdApi.Webpack.getByKeys('dispatch', 'isDispatching');
+      if (bdModule && typeof bdModule.dispatch === 'function') {
+        dispatcherMatch = { module: bdModule, path: 'BdApi', pattern: 'BdApi.Webpack.getByKeys' };
+      }
     }
 
-    modules.GuildCache = findModule(
-      (x) => x.constructor?.displayName === 'GuildStore'
-    );
-    if (modules.GuildCache == null) {
-      if (final) Utils.Error('GuildCache not found.');
-      return 0;
+    // Fallback sur recherche manuelle
+    if (!dispatcherMatch) {
+      dispatcherMatch = findModuleRobust([
+        { props: ['dispatch', 'register', 'subscribe'] },
+        { props: ['dispatch', 'wait'] },
+        { props: ['dispatch', 'register'] },
+        { props: ['dispatch'] },
+        { filter: (m) => typeof m.dispatch === 'function' && typeof m.register === 'function' },
+      ]);
     }
 
-    modules.FileUploader = findModuleByUniqueProperties([
-      'upload',
-      'cancel',
-      'instantBatchUpload',
-    ]);
-    if (modules.FileUploader == null) {
-      if (final) Utils.Error('FileUploader not found.');
-      return 0;
+    if (dispatcherMatch) {
+      modules.MessageDispatcher = dispatcherMatch.module;
+      deepLogModule(dispatcherMatch.module, 'MessageDispatcher');
     }
 
-    modules.CloudUploadPrototype = findModule(
+    // Recherche robuste de UserCache/UserStore
+    let userCacheMatch;
+
+    // Essayer d'abord avec BetterDiscord API Stores
+    if (useBdApi && BdApi.Webpack.Stores?.UserStore) {
+      userCacheMatch = { module: BdApi.Webpack.Stores.UserStore, path: 'BdApi.Webpack.Stores.UserStore', pattern: 'BdApi' };
+    } else if (useBdApi) {
+      const bdModule = BdApi.Webpack.getStore('UserStore') ||
+        BdApi.Webpack.getByKeys('getUser', 'getCurrentUser');
+      if (bdModule) {
+        userCacheMatch = { module: bdModule, path: 'BdApi', pattern: 'BdApi.Webpack' };
+      }
+    }
+
+    // Fallback sur recherche manuelle
+    if (!userCacheMatch) {
+      userCacheMatch = findModuleRobust([
+        { props: ['getUser', 'getUsers', 'getCurrentUser'] },
+        { props: ['getUser', 'getCurrentUser'] },
+        { props: ['getCurrentUser', 'findByTag'] },
+        { displayName: 'UserStore' },
+        { filter: (m) => typeof m.getUser === 'function' && typeof m.getCurrentUser === 'function' },
+      ]);
+    }
+
+    if (userCacheMatch) {
+      modules.UserCache = userCacheMatch.module;
+      deepLogModule(userCacheMatch.module, 'UserCache');
+    }
+
+    // Recherche robuste de ChannelCache/ChannelStore
+    let channelCacheMatch;
+
+    // Essayer avec BetterDiscord API
+    if (useBdApi && BdApi.Webpack.Stores?.ChannelStore) {
+      channelCacheMatch = { module: BdApi.Webpack.Stores.ChannelStore, path: 'BdApi.Webpack.Stores.ChannelStore', pattern: 'BdApi' };
+    } else if (useBdApi) {
+      const bdModule = BdApi.Webpack.getStore('ChannelStore') ||
+        BdApi.Webpack.getByKeys('getChannel', 'getDMFromUserId');
+      if (bdModule) {
+        channelCacheMatch = { module: bdModule, path: 'BdApi', pattern: 'BdApi.Webpack' };
+      }
+    }
+
+    if (!channelCacheMatch) {
+      channelCacheMatch = findModuleRobust([
+        { props: ['getChannel', 'getDMFromUserId'] },
+        { props: ['getChannel', 'getChannelId'] },
+        { props: ['getChannel'] },
+        { displayName: 'ChannelStore' },
+        { filter: (m) => typeof m.getChannel === 'function' },
+      ]);
+    }
+
+    if (channelCacheMatch) {
+      modules.ChannelCache = channelCacheMatch.module;
+      deepLogModule(channelCacheMatch.module, 'ChannelCache');
+    }
+
+    // Recherche robuste de SelectedChannelStore
+    let selectedChannelMatch;
+
+    if (useBdApi && BdApi.Webpack.Stores?.SelectedChannelStore) {
+      selectedChannelMatch = { module: BdApi.Webpack.Stores.SelectedChannelStore, path: 'BdApi.Webpack.Stores', pattern: 'BdApi' };
+    } else if (useBdApi) {
+      const bdModule = BdApi.Webpack.getStore('SelectedChannelStore');
+      if (bdModule) selectedChannelMatch = { module: bdModule, path: 'BdApi', pattern: 'BdApi' };
+    }
+
+    if (!selectedChannelMatch) {
+      selectedChannelMatch = findModuleRobust([
+        { props: ['getChannelId', 'getVoiceChannelId', 'getLastSelectedChannelId'] },
+        { props: ['getChannelId', 'getVoiceChannelId'] },
+        { props: ['getChannelId'] },
+        { displayName: 'SelectedChannelStore' },
+      ]);
+    }
+
+    if (selectedChannelMatch) {
+      modules.SelectedChannelStore = selectedChannelMatch.module;
+    }
+
+    // Recherche robuste de GuildCache/GuildStore
+    let guildCacheMatch;
+
+    if (useBdApi && BdApi.Webpack.Stores?.GuildStore) {
+      guildCacheMatch = { module: BdApi.Webpack.Stores.GuildStore, path: 'BdApi.Webpack.Stores', pattern: 'BdApi' };
+    } else if (useBdApi) {
+      const bdModule = BdApi.Webpack.getStore('GuildStore');
+      if (bdModule) guildCacheMatch = { module: bdModule, path: 'BdApi', pattern: 'BdApi' };
+    }
+
+    if (!guildCacheMatch) {
+      guildCacheMatch = findModuleRobust([
+        { displayName: 'GuildStore' },
+        { filter: (x) => x.constructor?.displayName === 'GuildStore' },
+        { props: ['getGuild', 'getGuilds'] },
+      ]);
+    }
+
+    if (guildCacheMatch) {
+      modules.GuildCache = guildCacheMatch.module;
+    }
+
+    // Recherche robuste de FileUploader
+    let fileUploaderMatch;
+
+    if (useBdApi) {
+      // Essayer avec getByKeys qui gère les exports minifiés
+      const bdModule = BdApi.Webpack.getByKeys('upload', 'instantBatchUpload') ||
+        BdApi.Webpack.getByKeys('upload', 'cancel') ||
+        BdApi.Webpack.getByKeys('uploadFiles');
+      if (bdModule) {
+        fileUploaderMatch = { module: bdModule, path: 'BdApi', pattern: 'BdApi.Webpack.getByKeys' };
+      }
+    }
+
+    if (!fileUploaderMatch) {
+      fileUploaderMatch = findModuleRobust([
+        { props: ['upload', 'cancel', 'instantBatchUpload'] },
+        { props: ['upload', 'instantBatchUpload'] },
+        { props: ['upload', 'uploadFiles'] },
+        { filter: (m) => typeof m.upload === 'function' && typeof m.cancel === 'function' },
+      ]);
+    }
+
+    if (fileUploaderMatch) {
+      modules.FileUploader = fileUploaderMatch.module;
+      deepLogModule(fileUploaderMatch.module, 'FileUploader');
+
+      // Si FileUploader est vide, chercher dans ses propriétés
+      const keys = Object.keys(fileUploaderMatch.module);
+      if (keys.length === 0 || keys.length === 1) {
+        // Utiliser getMangled de BdApi si disponible
+        if (useBdApi) {
+          const mangledUploader = BdApi.Webpack.getMangled(
+            (m) => m && typeof m === 'object',
+            {
+              upload: BdApi.Webpack.Filters.byKeys('upload'),
+              instantBatchUpload: BdApi.Webpack.Filters.byKeys('instantBatchUpload')
+            },
+            { first: true }
+          );
+          if (mangledUploader) {
+            modules.FileUploader = mangledUploader;
+            deepLogModule(mangledUploader, 'FileUploader (mangled)');
+          }
+        }
+      }
+    }
+
+    // Recherche robuste de CloudUploadPrototype
+    const cloudUploadProtoMatch = findModule(
       (x) => x.prototype?.uploadFileToCloud && x.prototype.upload
-    ).prototype;
-    if (modules.CloudUploadPrototype == null) {
-      if (final) Utils.Error('CloudUpload not found.');
-      return 0;
+    );
+    if (cloudUploadProtoMatch) {
+      modules.CloudUploadPrototype = cloudUploadProtoMatch.prototype;
     }
 
-    modules.CloudUploadHelper = findModuleByUniqueProperties([
-      'getUploadPayload',
-    ]);
-    if (modules.CloudUploadHelper == null) {
-      if (final) Utils.Error('CloudUploadHelper not found.');
-      return 0;
+    // Recherche robuste de CloudUploadHelper
+    let cloudUploadHelperMatch;
+
+    if (useBdApi) {
+      const bdModule = BdApi.Webpack.getByKeys('getUploadPayload', 'makeUpload') ||
+        BdApi.Webpack.getByKeys('getUploadPayload');
+      if (bdModule) {
+        cloudUploadHelperMatch = { module: bdModule, path: 'BdApi', pattern: 'BdApi.Webpack.getByKeys' };
+      }
     }
 
-    modules.PermissionEvaluator = findModuleByUniqueProperties([
-      'can',
-      'computePermissions',
-      'canManageUser',
-    ]);
-    if (modules.PermissionEvaluator == null) {
-      if (final) Utils.Error('PermissionEvaluator not found.');
-      return 0;
+    if (!cloudUploadHelperMatch) {
+      cloudUploadHelperMatch = findModuleRobust([
+        { props: ['getUploadPayload', 'makeUpload'] },
+        { props: ['getUploadPayload'] },
+      ]);
+    }
+    if (cloudUploadHelperMatch) {
+      modules.CloudUploadHelper = cloudUploadHelperMatch.module;
     }
 
-    modules.RelationshipStore = findModuleByUniqueProperties([
-      'isFriend',
-      'isBlocked',
-      'getFriendIDs',
-    ]);
-    if (modules.RelationshipStore == null) {
-      if (final) Utils.Error('RelationshipStore not found.');
-      return 0;
+    let permissionEvaluatorCan;
+    modules.PermissionEvaluator = findModule((x) => {
+      const getters = Object.values(Object.getOwnPropertyDescriptors(x)).map(
+        (x) => x.get
+      );
+      if (getters.includes(undefined)) {
+        // All properties are getters on the searched module
+        return false;
+      }
+      let properties;
+      try {
+        properties = getters.map((x) => x());
+      } catch {
+        return false;
+      }
+      const bigints = properties.filter((x) => typeof x === 'bigint');
+      if (bigints.length < 3) {
+        // The module has some precomputed permissions we can filter for
+        return false;
+      }
+      const knownPermissionsMask = 0x7ffffffffffffn;
+      const defaultPermissions = 1720707884502593n;
+      const managementPermissions = 8798106288300n;
+      if (
+        !bigints.includes(0n) ||
+        !bigints.some(
+          (x) => (x & knownPermissionsMask) === defaultPermissions
+        ) ||
+        !bigints.some(
+          (x) => (x & knownPermissionsMask) === managementPermissions
+        )
+      ) {
+        return false;
+      }
+
+      const canFunctionRegex =
+        /^function \w+\(\w+\)\s*{\s*let\s*{\s*permission:\s*\w+,\s*user:\s*\w+,\s*context:/s;
+      const functionToString = Function.prototype.toString;
+      permissionEvaluatorCan = properties.find(
+        (x) =>
+          typeof x === 'function' &&
+          canFunctionRegex.test(functionToString.apply(x))
+      );
+
+      return permissionEvaluatorCan != null;
+    });
+
+    // Recherche robuste de RelationshipStore
+    let relationshipMatch;
+
+    if (useBdApi && BdApi.Webpack.Stores?.RelationshipStore) {
+      relationshipMatch = { module: BdApi.Webpack.Stores.RelationshipStore, path: 'BdApi.Webpack.Stores', pattern: 'BdApi' };
+    } else if (useBdApi) {
+      const bdModule = BdApi.Webpack.getStore('RelationshipStore') ||
+        BdApi.Webpack.getByKeys('isFriend', 'isBlocked');
+      if (bdModule) relationshipMatch = { module: bdModule, path: 'BdApi', pattern: 'BdApi' };
     }
 
-    modules.PrivateChannelManager = findModuleByUniqueProperties([
-      'openPrivateChannel',
-      'ensurePrivateChannel',
-      'closePrivateChannel',
-    ]);
-    if (modules.PrivateChannelManager == null) {
-      if (final) Utils.Error('PrivateChannelManager not found.');
-      return 0;
+    if (!relationshipMatch) {
+      relationshipMatch = findModuleRobust([
+        { props: ['isFriend', 'isBlocked', 'getFriendIDs'] },
+        { props: ['isFriend', 'isBlocked'] },
+        { displayName: 'RelationshipStore' },
+      ]);
     }
 
-    modules.Premium = findModuleByUniqueProperties(['canUseEmojisEverywhere']);
-    modules.MessageCache = findModuleByUniqueProperties([
-      'getMessage',
-      'getMessages',
-    ]);
+    if (relationshipMatch) {
+      modules.RelationshipStore = relationshipMatch.module;
+    }
+
+    // Recherche robuste de PrivateChannelManager
+    let privateChannelMatch;
+
+    if (useBdApi) {
+      const bdModule = BdApi.Webpack.getByKeys('openPrivateChannel', 'ensurePrivateChannel') ||
+        BdApi.Webpack.getByKeys('ensurePrivateChannel');
+      if (bdModule) {
+        privateChannelMatch = { module: bdModule, path: 'BdApi', pattern: 'BdApi.Webpack.getByKeys' };
+      }
+    }
+
+    if (!privateChannelMatch) {
+      privateChannelMatch = findModuleRobust([
+        { props: ['openPrivateChannel', 'ensurePrivateChannel', 'closePrivateChannel'] },
+        { props: ['openPrivateChannel', 'ensurePrivateChannel'] },
+        { props: ['ensurePrivateChannel'] },
+      ]);
+    }
+
+    if (privateChannelMatch) {
+      modules.PrivateChannelManager = privateChannelMatch.module;
+    }
+
+    // Recherche robuste de Premium
+    let premiumMatch;
+
+    if (useBdApi) {
+      const bdModule = BdApi.Webpack.getByKeys('canUseEmojisEverywhere', 'getPremiumType') ||
+        BdApi.Webpack.getByKeys('canUseEmojisEverywhere');
+      if (bdModule) {
+        premiumMatch = { module: bdModule, path: 'BdApi', pattern: 'BdApi.Webpack.getByKeys' };
+      }
+    }
+
+    if (!premiumMatch) {
+      premiumMatch = findModuleRobust([
+        { props: ['canUseEmojisEverywhere', 'getPremiumType'] },
+        { props: ['canUseEmojisEverywhere'] },
+      ]);
+    }
+    if (premiumMatch) {
+      modules.Premium = premiumMatch.module;
+    }
+
+    // Recherche robuste de MessageCache
+    let messageCacheMatch;
+
+    if (useBdApi && BdApi.Webpack.Stores?.MessageStore) {
+      messageCacheMatch = { module: BdApi.Webpack.Stores.MessageStore, path: 'BdApi.Webpack.Stores', pattern: 'BdApi' };
+    } else if (useBdApi) {
+      const bdModule = BdApi.Webpack.getStore('MessageStore') ||
+        BdApi.Webpack.getByKeys('getMessage', 'getMessages');
+      if (bdModule) messageCacheMatch = { module: bdModule, path: 'BdApi', pattern: 'BdApi' };
+    }
+
+    if (!messageCacheMatch) {
+      messageCacheMatch = findModuleRobust([
+        { props: ['getMessage', 'getMessages', 'hasPresent'] },
+        { props: ['getMessage', 'getMessages'] },
+        { displayName: 'MessageStore' },
+      ]);
+    }
+    if (messageCacheMatch) {
+      modules.MessageCache = messageCacheMatch.module;
+    }
+
+    const moduleNames = ['MessageQueue', 'MessageDispatcher', 'UserCache', 'ChannelCache',
+      'SelectedChannelStore', 'GuildCache', 'FileUploader', 'CloudUploadPrototype',
+      'CloudUploadHelper', 'PermissionEvaluator', 'RelationshipStore',
+      'PrivateChannelManager', 'Premium', 'MessageCache'];
+
+    let foundCount = 0;
+    let bdApiCount = 0;
+
+    moduleNames.forEach(name => {
+      const found = modules[name] != null;
+      if (found) {
+        foundCount++;
+        // Compter ceux trouvés via BdApi (basé sur les paths)
+        const matchVar = name === 'MessageQueue' ? messageQueueMatch :
+          name === 'MessageDispatcher' ? dispatcherMatch :
+            name === 'UserCache' ? userCacheMatch :
+              name === 'ChannelCache' ? channelCacheMatch :
+                name === 'SelectedChannelStore' ? selectedChannelMatch :
+                  name === 'GuildCache' ? guildCacheMatch :
+                    name === 'FileUploader' ? fileUploaderMatch :
+                      name === 'RelationshipStore' ? relationshipMatch :
+                        name === 'PrivateChannelManager' ? privateChannelMatch :
+                          name === 'Premium' ? premiumMatch :
+                            name === 'MessageCache' ? messageCacheMatch :
+                              name === 'CloudUploadHelper' ? cloudUploadHelperMatch : null;
+
+        if (matchVar && matchVar.path && matchVar.path.includes('BdApi')) {
+          bdApiCount++;
+        }
+      }
+    });
 
     Discord.modules = modules;
 
@@ -1672,32 +2280,32 @@ ${HeaderBarSelector}, ${HeaderBarChildrenSelector} { overflow: visible !importan
       StorageSave:
         typeof GM_getValue !== 'undefined' && typeof GM_setValue !== 'undefined'
           ? (key, value) =>
-              new Promise((resolve) => {
-                resolve(GM_setValue(key, JSON.stringify(value)));
-              })
+            new Promise((resolve) => {
+              resolve(GM_setValue(key, JSON.stringify(value)));
+            })
           : typeof chrome !== 'undefined' && chrome.storage != null
-          ? (key, value) =>
+            ? (key, value) =>
               new Promise((resolve) => {
                 chrome.storage.sync.set({ key: value }, resolve);
               })
-          : (key, value) =>
+            : (key, value) =>
               new Promise((resolve) => {
                 resolve(SavedLocalStorage.setItem(key, JSON.stringify(value)));
               }),
       StorageLoad:
         typeof GM_getValue !== 'undefined' && typeof GM_setValue !== 'undefined'
           ? (key) =>
-              new Promise((resolve) => {
-                let jsonValue = GM_getValue(key);
-                if (jsonValue == null) resolve(null);
-                resolve(JSON.parse(jsonValue));
-              })
+            new Promise((resolve) => {
+              let jsonValue = GM_getValue(key);
+              if (jsonValue == null) resolve(null);
+              resolve(JSON.parse(jsonValue));
+            })
           : typeof chrome !== 'undefined' && chrome.storage != null
-          ? (key) =>
+            ? (key) =>
               new Promise((resolve) => {
                 chrome.storage.sync.get(key, (result) => resolve(result[key]));
               })
-          : (key) =>
+            : (key) =>
               new Promise((resolve) => {
                 let jsonValue = SavedLocalStorage.getItem(key);
                 if (jsonValue == null) resolve(null);
@@ -1715,17 +2323,17 @@ ${HeaderBarSelector}, ${HeaderBarChildrenSelector} { overflow: visible !importan
       DownloadFile:
         typeof GM_xmlhttpRequest !== 'undefined'
           ? (url) =>
-              new Promise((resolve, reject) => {
-                GM_xmlhttpRequest({
-                  method: 'GET',
-                  url,
-                  responseType: 'arraybuffer',
-                  onload: (result) => resolve(result.response),
-                  onerror: reject,
-                });
-              })
+            new Promise((resolve, reject) => {
+              GM_xmlhttpRequest({
+                method: 'GET',
+                url,
+                responseType: 'arraybuffer',
+                onload: (result) => resolve(result.response),
+                onerror: reject,
+              });
+            })
           : nodeHttps != null
-          ? function (url) {
+            ? function (url) {
               return new Promise((resolve, reject) => {
                 const request = nodeHttps.get(
                   url,
@@ -1743,7 +2351,7 @@ ${HeaderBarSelector}, ${HeaderBarChildrenSelector} { overflow: visible !importan
                 });
               });
             }
-          : (url) =>
+            : (url) =>
               new Promise((resolve, reject) => {
                 let xhr = new XMLHttpRequest();
                 xhr.responseType = 'arraybuffer';
@@ -1848,9 +2456,9 @@ ${HeaderBarSelector}, ${HeaderBarChildrenSelector} { overflow: visible !importan
       GetNonce:
         window.BigInt != null
           ? () =>
-              (
-                BigInt(Date.now() - 14200704e5 /*DISCORD_EPOCH*/) << BigInt(22)
-              ).toString()
+            (
+              BigInt(Date.now() - 14200704e5 /*DISCORD_EPOCH*/) << BigInt(22)
+            ).toString()
           : () => Date.now().toString(),
 
       FormatTime: (timestamp) => {
@@ -2373,7 +2981,7 @@ ${HeaderBarSelector}, ${HeaderBarChildrenSelector} { overflow: visible !importan
 
             delete DataBase.dhPrivateKeyFallback;
             DataBase.dhPrivateKey = this.BytesToBase64(dhPrivateKeyBytes);
-          } catch (e) {}
+          } catch (e) { }
 
           return dhPrivateKey;
         } else return await this.DhImportPrivateKey(dhPrivateKeyBytes);
@@ -2585,22 +3193,26 @@ ${HeaderBarSelector}, ${HeaderBarChildrenSelector} { overflow: visible !importan
       },
 
       SendSystemMessage: function (channelId, sysmsg) {
-        Discord.enqueue(
-          {
-            type: 0 /*send*/,
-            message: {
-              channelId: channelId,
-              nonce: this.GetNonce(),
-              content:
-                '```ml\n-----SYSTEM MESSAGE-----\n```' +
-                sysmsg +
-                '\n`🔒` ```yaml\n🔒\n```',
-            },
-          },
-          () => {
-            /*TODO*/
-          }
-        );
+        // Format moderne Discord Canary 2026: sendMessage(channelId, messageObject, undefined, options)
+        const messageObject = {
+          content:
+            '```ml\n-----SYSTEM MESSAGE-----\n```' +
+            sysmsg +
+            '\n```yaml\n🔒\n```',
+          tts: false,
+          invalidEmojis: [],
+          validNonShortcutEmojis: [],
+          // Marquer comme message système pour bypasser handleSend
+          _sdc_system_message: true
+        };
+
+        const options = {
+          alsoForwardToChannelId: undefined,
+          location: 'chat_input'
+        };
+
+        // Appeler avec le format moderne (channelId, messageObject, undefined, options)
+        const result = Discord.enqueue(channelId, messageObject, undefined, options);
       },
       SendPersonalKey: async function (channelId) {
         let channelConfig = this.GetChannelConfig(channelId);
@@ -2750,10 +3362,9 @@ ${HeaderBarSelector}, ${HeaderBarChildrenSelector} { overflow: visible !importan
           this.Base64ToBytes(DataBase.dhPublicKey)
         );
 
-        this.SendSystemMessage(
-          channelId,
-          `*type*: \`DH KEY\`\n*dhKey*: \`${dhPublicKeyPayload}\``
-        );
+        const sysMsg = `*type*: \`DH KEY\`\n*dhKey*: \`${dhPublicKeyPayload}\``;
+
+        this.SendSystemMessage(channelId, sysMsg);
         channelConfig =
           channelConfig || this.GetOrCreateChannelConfig(channelId);
         channelConfig.w = 1;
@@ -2921,9 +3532,8 @@ ${HeaderBarSelector}, ${HeaderBarChildrenSelector} { overflow: visible !importan
         );
 
         if (keyHash === DataBase.personalKeyHash) {
-          let keyDescriptor = `<@${
-            Discord.getCurrentUser().id
-          }>'s personal key`;
+          let keyDescriptor = `<@${Discord.getCurrentUser().id
+            }>'s personal key`;
           this.SendSystemMessage(
             channelId,
             `*type*: \`KEY SHARE\`\n*status*: \`OK\`\n*key*: \`${keyHashPayload}\`\n*sharedKey*: \`${sharedKeyPayload}\`\n*keyType*: \`PERSONAL\`\n*keyDescriptor*: \`${keyDescriptor}\``
@@ -3011,9 +3621,9 @@ ${HeaderBarSelector}, ${HeaderBarChildrenSelector} { overflow: visible !importan
           keyRotator.start > now
             ? keyRotator.start - now
             : Math.ceil(
-                (1 - (((now - keyRotator.start) / keyRotator.interval) % 1)) *
-                  keyRotator.interval
-              );
+              (1 - (((now - keyRotator.start) / keyRotator.interval) % 1)) *
+              keyRotator.interval
+            );
         KeyRotators[keyHash] = this.KeyRotationTimeout(
           keyHash,
           keyRotator,
@@ -3165,18 +3775,58 @@ ${HeaderBarSelector}, ${HeaderBarChildrenSelector} { overflow: visible !importan
       Utils.dbChanged = true;
     };
 
+    // Registre pour sauvegarder les exports trouvés par mirrorFunction
+    const moduleExports = {};
+
     const mirrorFunction = (moduleName, functionName) => {
       let module = modules[moduleName];
       let mirroredName = `original_${functionName}`;
-      let originalFunction = module[functionName];
+      let targetExport = module; // Par défaut, le module lui-même
 
-      if (typeof originalFunction !== 'function')
-        throw `${moduleName}.${functionName}() is invalid`;
+      // Chercher la fonction dans plusieurs emplacements possibles
+      let originalFunction = module[functionName]; // Direct
 
+      // Si pas trouvée directement, chercher dans les exports minifiés
+      if (typeof originalFunction !== 'function') {
+        const possiblePaths = [module.Z, module.ZP, module.default];
+        for (const path of possiblePaths) {
+          if (path && typeof path[functionName] === 'function') {
+            console.log(`[SDC] mirrorFunction: ${moduleName}.${functionName} trouvé dans path alternatif`);
+            originalFunction = path[functionName];
+            targetExport = path; // Update target export
+            break;
+          }
+        }
+      }
+
+      // Si toujours pas trouvée, chercher dans les objets à une seule clé
+      if (typeof originalFunction !== 'function') {
+        const keys = Object.keys(module);
+        if (keys.length === 1 && typeof module[keys[0]] === 'object') {
+          const singleKey = module[keys[0]];
+          if (typeof singleKey[functionName] === 'function') {
+            console.log(`[SDC] mirrorFunction: ${moduleName}.${functionName} trouvé dans single-key object`);
+            originalFunction = singleKey[functionName];
+            targetExport = singleKey;
+          }
+        }
+      }
+
+      if (typeof originalFunction !== 'function') {
+        console.error(`[SDC] ✗ ${moduleName}.${functionName}() est invalide ou introuvable`);
+        return false; // Retourner false au lieu de throw
+      }
+
+      // Sauvegarder l'export trouvé pour hookFunction
+      if (!moduleExports[moduleName]) moduleExports[moduleName] = {};
+      moduleExports[moduleName][functionName] = { targetExport, originalFunction };
+
+      console.log(`[SDC] ✓ ${moduleName}.${functionName}() mirrorée avec succès`);
       Discord[mirroredName] = originalFunction;
       Discord[functionName] = function () {
-        return originalFunction.apply(module, arguments);
+        return originalFunction.apply(targetExport, arguments);
       };
+      return true;
     };
     const hookFunction = (moduleName, functionName, alias) => {
       alias ??= functionName;
@@ -3188,38 +3838,186 @@ ${HeaderBarSelector}, ${HeaderBarChildrenSelector} { overflow: visible !importan
         set: (value) => (detourFunction = value),
       });
 
-      modules[moduleName][functionName] = function () {
+      // Utiliser l'export trouvé par mirrorFunction si disponible
+      let targetExport = moduleExports[moduleName]?.[functionName]?.targetExport;
+
+      if (!targetExport) {
+        // Fallback : chercher manuellement
+        const module = modules[moduleName];
+        if (!module) {
+          console.error(`[SDC] ✗ Module ${moduleName} non trouvé pour hook`);
+          return false;
+        }
+
+        const exports = [module, module.Z, module.ZP, module.default].filter(Boolean);
+        for (const exp of exports) {
+          if (typeof exp[functionName] === 'function') {
+            targetExport = exp;
+            break;
+          }
+        }
+      }
+
+      if (!targetExport) {
+        console.error(`[SDC] ✗ ${moduleName}.${functionName} non trouvé pour hook`);
+        return false;
+      }
+
+      // Hook la fonction
+      targetExport[functionName] = function () {
         return Reflect.apply(detourFunction, this, arguments);
       };
+
+      console.log(`[SDC] ✓ ${moduleName}.${functionName} hooké avec succès`);
+      return true;
     };
 
     try {
-      mirrorFunction('MessageQueue', 'enqueue');
-      mirrorFunction('MessageDispatcher', 'dispatch');
+      // Gérer MessageQueue avec fallback enqueue/sendMessage
+      const messageQueueModule = modules.MessageQueue;
+      if (messageQueueModule) {
+        // Chercher enqueue ou sendMessage dans tous les exports possibles
+        const mqExports = [
+          messageQueueModule,
+          messageQueueModule.Z,
+          messageQueueModule.ZP,
+          messageQueueModule.default
+        ].filter(Boolean);
+
+        let enqueueFunc = null;
+        let enqueueTarget = null;
+        let funcName = null;
+
+        // Trouver la fonction et son emplacement
+        for (const exp of mqExports) {
+          if (typeof exp.enqueue === 'function') {
+            enqueueFunc = exp.enqueue;
+            enqueueTarget = exp;
+            funcName = 'enqueue';
+            break;
+          } else if (typeof exp.sendMessage === 'function') {
+            enqueueFunc = exp.sendMessage;
+            enqueueTarget = exp;
+            funcName = 'sendMessage';
+            break;
+          }
+        }
+
+        if (enqueueFunc && enqueueTarget) {
+          console.log(`[SDC] ✓ MessageQueue.${funcName} trouvé et prêt à hooker`);
+
+          // Sauvegarder la fonction originale ET son contexte
+          Discord.original_enqueue = enqueueFunc;
+          Discord.enqueueTarget = enqueueTarget;  // Sauvegarder le contexte pour l'utiliser dans detour_enqueue
+
+          // Initialiser detour_enqueue à l'original (sera remplacé par Load())
+          let detourFunction = enqueueFunc;
+          Object.defineProperty(Discord, 'detour_enqueue', {
+            get: () => detourFunction,
+            set: (value) => (detourFunction = value),
+          });
+
+          // Créer Discord.enqueue qui passe par le detour
+          Discord.enqueue = function () {
+            // Appeler le detour pour que nos hooks s'appliquent aussi aux appels manuels
+            return Reflect.apply(detourFunction, enqueueTarget, arguments);
+          };
+
+          // Hook la fonction originale pour appeler detour_enqueue
+          const originalEnqueue = enqueueFunc;
+          enqueueTarget[funcName] = function () {
+            return Reflect.apply(detourFunction, this, arguments);
+          };
+
+        }
+      }
+
+      // Mirror MessageDispatcher.dispatch si disponible
+      if (modules.MessageDispatcher && typeof modules.MessageDispatcher.dispatch === 'function') {
+        if (mirrorFunction('MessageDispatcher', 'dispatch')) {
+          // Initialiser le detour (sera remplacé par Load())
+          let detourFunction = Discord.dispatch;
+          Object.defineProperty(Discord, 'detour_dispatch', {
+            get: () => detourFunction,
+            set: (value) => (detourFunction = value),
+          });
+
+          // Hook la fonction dispatch pour utiliser detour_dispatch
+          const targetExport = moduleExports['MessageDispatcher']?.['dispatch']?.targetExport;
+          if (targetExport) {
+            targetExport.dispatch = function () {
+              return Reflect.apply(detourFunction, this, arguments);
+            };
+          }
+        }
+      }
+
       mirrorFunction('UserCache', 'getUser');
       mirrorFunction('UserCache', 'getCurrentUser');
       mirrorFunction('ChannelCache', 'getChannel');
       mirrorFunction('ChannelCache', 'getDMFromUserId');
       mirrorFunction('SelectedChannelStore', 'getChannelId');
       mirrorFunction('GuildCache', 'getGuild');
-      mirrorFunction('FileUploader', 'upload');
-      mirrorFunction('FileUploader', 'instantBatchUpload');
-      mirrorFunction('FileUploader', 'uploadFiles');
-      mirrorFunction('PermissionEvaluator', 'can');
-      mirrorFunction('RelationshipStore', 'isFriend');
-      mirrorFunction('PrivateChannelManager', 'ensurePrivateChannel');
-      mirrorFunction('CloudUploadHelper', 'getUploadPayload');
-      mirrorFunction('CloudUploadPrototype', 'uploadFileToCloud');
-      Discord.cloudUpload = modules.CloudUploadPrototype.upload;
 
-      hookFunction('MessageQueue', 'enqueue');
-      hookFunction('MessageDispatcher', 'dispatch');
-      hookFunction('FileUploader', 'upload');
-      hookFunction('FileUploader', 'instantBatchUpload');
-      hookFunction('FileUploader', 'uploadFiles');
-      hookFunction('CloudUploadHelper', 'getUploadPayload');
-      hookFunction('CloudUploadPrototype', 'uploadFileToCloud');
-      hookFunction('CloudUploadPrototype', 'upload', 'cloudUpload');
+      // FileUploader - Skip si vide (pas critique pour chiffrement de messages)
+      if (modules.FileUploader) {
+        const uploaderKeys = Object.keys(modules.FileUploader);
+        if (uploaderKeys.length > 0) {
+          mirrorFunction('FileUploader', 'upload');
+          mirrorFunction('FileUploader', 'instantBatchUpload');
+          mirrorFunction('FileUploader', 'uploadFiles');
+        }
+      }
+
+      if (modules.RelationshipStore && typeof modules.RelationshipStore.isFriend === 'function') {
+        mirrorFunction('RelationshipStore', 'isFriend');
+      }
+
+      if (modules.PrivateChannelManager && typeof modules.PrivateChannelManager.ensurePrivateChannel === 'function') {
+        mirrorFunction('PrivateChannelManager', 'ensurePrivateChannel');
+      }
+
+      if (modules.CloudUploadHelper && typeof modules.CloudUploadHelper.getUploadPayload === 'function') {
+        mirrorFunction('CloudUploadHelper', 'getUploadPayload');
+      }
+
+      if (modules.CloudUploadPrototype) {
+        mirrorFunction('CloudUploadPrototype', 'uploadFileToCloud');
+
+        // Gérer cloudUpload avec fallback
+        Discord.cloudUpload = modules.CloudUploadPrototype.upload ||
+          modules.CloudUploadPrototype.Z?.upload ||
+          modules.CloudUploadPrototype.ZP?.upload ||
+          modules.CloudUploadPrototype.default?.upload;
+      }
+
+      Discord.can = permissionEvaluatorCan;
+
+      // MessageDispatcher.dispatch est déjà configuré manuellement plus haut (detour_dispatch)
+      // Pas besoin d'appeler hookFunction pour lui
+
+      // FileUploader hooks - Seulement si Discord.upload existe (créé par mirrorFunction)
+      if (Discord.upload) {
+        hookFunction('FileUploader', 'upload');
+      }
+      if (Discord.instantBatchUpload) {
+        hookFunction('FileUploader', 'instantBatchUpload');
+      }
+      if (Discord.uploadFiles) {
+        hookFunction('FileUploader', 'uploadFiles');
+      }
+
+      if (modules.CloudUploadHelper && Discord.getUploadPayload) {
+        hookFunction('CloudUploadHelper', 'getUploadPayload');
+      }
+
+      if (modules.CloudUploadPrototype && Discord.uploadFileToCloud) {
+        hookFunction('CloudUploadPrototype', 'uploadFileToCloud');
+      }
+      if (modules.CloudUploadPrototype && Discord.cloudUpload) {
+        hookFunction('CloudUploadPrototype', 'upload', 'cloudUpload');
+      }
+
     } catch (err) {
       Utils.Error(err);
       return -1;
@@ -3612,21 +4410,21 @@ ${HeaderBarSelector}, ${HeaderBarChildrenSelector} { overflow: visible !importan
     if (mediaType === 'img') {
       placeholder = spoiler
         ? {
-            type: 'rich',
-            thumbnail: {
-              url: 'data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==',
-              width: 1,
-              height: 80,
-            },
-          }
+          type: 'rich',
+          thumbnail: {
+            url: 'data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==',
+            width: 1,
+            height: 80,
+          },
+        }
         : {
-            type: 'image',
-            thumbnail: {
-              url: 'data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==',
-              width: 1,
-              height: 300,
-            },
-          };
+          type: 'image',
+          thumbnail: {
+            url: 'data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==',
+            width: 1,
+            height: 300,
+          },
+        };
     } else {
       isVideo = true;
       placeholder = {
@@ -3926,7 +4724,7 @@ ${HeaderBarSelector}, ${HeaderBarChildrenSelector} { overflow: visible !importan
       embedEncrypted(
         message,
         'https://w.soundcloud.com/player/?visual=true&url=' +
-          encodeURIComponent(url),
+        encodeURIComponent(url),
         null
       );
   }
@@ -4630,8 +5428,14 @@ ${HeaderBarSelector}, ${HeaderBarChildrenSelector} { overflow: visible !importan
   const prefixRegex = /^(?::?ENC(?:(?:_\w*)?:|\b)|<:ENC:\d{1,20}>)\s*/;
   const noencprefixRegex = /^(?::?NOENC:?|<:NOENC:\d{1,20}>)\s*/; //not really expecting an emoji
   async function handleSend(channelId, message, forceSimple) {
-    let channelConfig = Utils.GetChannelConfig(channelId);
     let content = message.content;
+
+    // Ne pas chiffrer les messages système
+    if (content && content.includes('-----SYSTEM MESSAGE-----')) {
+      return null;
+    }
+
+    let channelConfig = Utils.GetChannelConfig(channelId);
     let prefixMatch = prefixRegex.exec(content);
     if (channelConfig == null) {
       if (prefixMatch != null) {
@@ -4961,15 +5765,55 @@ ${HeaderBarSelector}, ${HeaderBarChildrenSelector} { overflow: visible !importan
   function Load() {
     Utils.RefreshCache();
 
-    Discord.detour_enqueue = function (packet) {
-      (async () => {
-        await handleSend(
-          packet.message.channelId,
-          packet.message,
-          /*packet.type === 1/*edit*/ true
-        );
+    Discord.detour_enqueue = function () {
+      // Capturer le contexte et les arguments avant d'entrer dans l'async
+      const self = this;
+      const args = arguments;
 
-        Discord.original_enqueue.apply(this, arguments);
+      // Discord s'attend à recevoir une Promise, il faut la retourner
+      return (async () => {
+        // Discord Canary 2026: sendMessage reçoit directement (channelId, message, ...) au lieu de packet
+        let channelId, message;
+
+        // Essayer de détecter la structure
+        if (args.length > 0 && args[0]) {
+          const firstArg = args[0];
+
+          // Ancien format: packet.message.channelId
+          if (firstArg.message && firstArg.message.channelId) {
+            channelId = firstArg.message.channelId;
+            message = firstArg.message;
+          }
+          // Format possible: { channelId, message }
+          else if (firstArg.channelId) {
+            channelId = firstArg.channelId;
+            message = firstArg;
+          }
+          // Format moderne: sendMessage(channelId, messageObject, ...)
+          else if (typeof firstArg === 'string' && args[1]) {
+            channelId = firstArg;
+            message = args[1];
+          }
+          // Fallback: le premier arg est le message avec channelId dedans
+          else if (firstArg.channel_id) {
+            channelId = firstArg.channel_id;
+            message = firstArg;
+          }
+        }
+
+        if (channelId && message) {
+          await handleSend(channelId, message, true);
+        }
+
+        // Nettoyer la propriété _sdc_system_message avant d'appeler Discord
+        if (message && message._sdc_system_message) {
+          delete message._sdc_system_message;
+        }
+
+        // Appeler la fonction originale et retourner sa Promise
+        const result = Discord.original_enqueue.apply(Discord.enqueueTarget, args);
+
+        return result;
       })();
     };
 
