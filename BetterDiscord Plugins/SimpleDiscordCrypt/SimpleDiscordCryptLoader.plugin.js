@@ -2,7 +2,7 @@
  * @name SimpleDiscordCryptLoader
  * @version 1.2
  * @description Loads SimpleDiscordCrypt
- * @author An0 [Edited by Sleek]
+ * @author An0
  * @source https://gitlab.com/An0/SimpleDiscordCrypt
  */
 
@@ -29,58 +29,73 @@
 
 var SimpleDiscordCryptLoader = (() => {
 
-'use strict';
+    'use strict';
 
-let localStorage;
-let iframe;
-const CspDisarmed = true;
-let Initialized = false;
-let Loaded = false;
+    let localStorage;
+    let iframe;
+    const CspDisarmed = true;
+    let Initialized = false;
+    let Loaded = false;
 
-var InitPromise;
+    var InitPromise;
 
-function Start() {
-    if(!Initialized) {
-        iframe = document.createElement('iframe');
-        iframe.style.display = 'none';
+    function Start() {
+        if (!Initialized) {
+            iframe = document.createElement('iframe');
+            iframe.style.display = 'none';
 
-        iframe.onload = () => {
-            iframe.contentDocument.body.innerHTML = "<iframe/>";
-            localStorage = Object.getOwnPropertyDescriptor(iframe.contentDocument.body.children[0].__proto__, 'contentWindow').get.apply(iframe).localStorage;
+            iframe.onload = () => {
+                iframe.contentDocument.body.innerHTML = "<iframe/>";
+                localStorage = Object.getOwnPropertyDescriptor(iframe.contentDocument.body.children[0].__proto__, 'contentWindow').get.apply(iframe).localStorage;
 
-            require('https').get("https://raw.githubusercontent.com/s4dic/discord/refs/heads/main/BetterDiscord%20Plugins/SimpleDiscordCrypt/data/SimpleDiscordCrypt.user.js", (response) => {
-                let data = [];
-                response.on('data', (chunk) => data.push(chunk));
-                response.on('end', () => eval(typeof data[0] === 'string' ? data.join("") : Buffer.concat(data).toString()));
+                const fs = require('fs');
+                const path = require('path');
+
+                const scriptPath = path.join(__dirname, 'SimpleDiscordCrypt.user.js');
+
+                try {
+                    const scriptContent = fs.readFileSync(scriptPath, 'utf8');
+                    eval(scriptContent);
+                } catch (error) {
+                    console.error('[SimpleDiscordCrypt] Erreur lors du chargement du fichier local:', error);
+                    console.log('[SimpleDiscordCrypt] Tentative de téléchargement depuis GitLab...');
+                    // Fallback vers le téléchargement en ligne
+                    require('https').get("https://raw.githubusercontent.com/s4dic/discord/refs/heads/main/BetterDiscord%20Plugins/SimpleDiscordCrypt/data/SimpleDiscordCrypt.user.js", (response) => {
+                        let data = [];
+                        response.on('data', (chunk) => data.push(chunk));
+                        response.on('end', () => eval(typeof data[0] === 'string' ? data.join("") : Buffer.concat(data).toString()));
+                    });
+                }
+            };
+            document.body.appendChild(iframe);
+
+            Initialized = true;
+        }
+        else if (!Loaded && InitPromise) {
+            InitPromise.then(({ Load }) => {
+                Load();
+                Loaded = true;
             });
-        };
-        document.body.appendChild(iframe);
-
-        Initialized = true;
+        }
     }
-    else if(!Loaded && InitPromise) {
-        InitPromise.then(({Load}) => {
-            Load();
-            Loaded = true;
-        });
+
+    function Stop() {
+        if (!Initialized) return;
+
+        if (Loaded && InitPromise) {
+            InitPromise.then(({ Unload }) => {
+                Unload();
+                Loaded = false;
+            });
+        }
     }
-}
 
-function Stop() {
-    if(!Initialized) return;
-
-    if(Loaded && InitPromise) {
-        InitPromise.then(({Unload}) => {
-            Unload();
-            Loaded = false;
-        });
-    }
-}
-
-return function() { return {
-    start: Start,
-    stop: Stop
-}};
+    return function () {
+        return {
+            start: Start,
+            stop: Stop
+        }
+    };
 
 })();
 
