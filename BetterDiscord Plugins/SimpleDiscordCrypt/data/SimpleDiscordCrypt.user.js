@@ -82,7 +82,7 @@
   const Style = {
     css: `
 /*fixes*/
-${HeaderBarSelector}, ${HeaderBarChildrenSelector} { overflow: visible !important }
+${HeaderBarSelector}, ${HeaderBarChildrenSelector}, ${HeaderBarSelectors.join(', ')} { overflow: visible !important }
 /*style*/
 .sdc * {
     font-family: var(--font-primary);
@@ -803,7 +803,7 @@ ${HeaderBarSelector}, ${HeaderBarChildrenSelector} { overflow: visible !importan
   const MenuBar = {
     menuBarCss: `.SDC_TOGGLE{opacity:.6;fill:#fff;height:24px;cursor:pointer;margin-left:-5px}.SDC_TOGGLE:hover{opacity:.8}.sdc-tooltip{pointer-events:none}.sdc-menu{z-index:10000}`,
     toggleOnButtonHtml: `<div class="sdc" style="position:relative;display:inline-block"><svg class="SDC_TOGGLE" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 36 36"><path d="M18 0c-4.612 0-8.483 3.126-9.639 7.371l3.855 1.052C12.91 5.876 15.233 4 18 4c3.313 0 6 2.687 6 6v10h4V10c0-5.522-4.477-10-10-10z"/><path d="M31 32c0 2.209-1.791 4-4 4H9c-2.209 0-4-1.791-4-4V20c0-2.209 1.791-4 4-4h18c2.209 0 4 1.791 4 4v12z"/></svg><p class="sdc-tooltip">Encrypt Channel</p></div>`,
-    toggleOffButtonHtml: `<div class="sdc" style="position:relative;display:inline-block"><svg class="SDC_TOGGLE" style="opacity:1" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 36 36"><path d="M18 3C12.477 3 8 7.477 8 13v10h4V13c0-3.313 2.686-6 6-6s6 2.687 6 6v10h4V13c0-5.523-4.477-10-10-10z"/><path d="M31 32c0 2.209-1.791 4-4 4H9c-2.209 0-4-1.791-4-4V20c0-2.209 1.791-4 4-4h18c2.209 0 4 1.791 4 4v12z"/></svg><p class="sdc-tooltip">Disable Encryption</p></div>`,
+    toggleOffButtonHtml: `<div class="sdc" style="position:relative;display:inline-block"><svg class="SDC_TOGGLE" style="opacity:1;fill:#00ff00" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 36 36"><path d="M18 3C12.477 3 8 7.477 8 13v10h4V13c0-3.313 2.686-6 6-6s6 2.687 6 6v10h4V13c0-5.523-4.477-10-10-10z"/><path d="M31 32c0 2.209-1.791 4-4 4H9c-2.209 0-4-1.791-4-4V20c0-2.209 1.791-4 4-4h18c2.209 0 4 1.791 4 4v12z"/></svg><p class="sdc-tooltip">Disable Encryption</p></div>`,
     keySelectHtml: `<div class="sdc sdc-select" style="margin:-3px 0 -2px 5px"><label style="min-width:200px;max-width:300px;height:30px"><input class="SDC_DROPDOWN sdc-hidden" type="checkbox"><p class="SDC_SELECTED" style="justify-content:center;text-align:center"></p></label><div class="SDC_OPTIONS" style="visibility:hidden"></div></div>`,
     toggledOnCss: `${ChatInputSelector}{box-shadow:0 0 0 1px ${BaseColor} !important}`,
     menuHtml: `<button type="button" class="SDC_FOCUS sdc-hidden"></button>
@@ -980,6 +980,11 @@ ${HeaderBarSelector}, ${HeaderBarChildrenSelector} { overflow: visible !importan
           }
         }
 
+        // Correction d'alignement : remonter d'un niveau si on cible le texte directement
+        if (titleElement && ['H1', 'H2', 'H3', 'SPAN'].includes(titleElement.tagName)) {
+          titleElement = titleElement.parentElement;
+        }
+
         if (titleElement == null) {
           if (!isRetry) this.retries = 0;
           if (this.retries < 10) {
@@ -1072,7 +1077,7 @@ ${HeaderBarSelector}, ${HeaderBarChildrenSelector} { overflow: visible !importan
       this.domElement = wrapper;
     },
     Update: function () {
-      if (!document.body.contains(this.domElement))
+      if (this.domElement && !document.body.contains(this.domElement))
         document.body.appendChild(this.domElement);
     },
     New: function (message, okCallback, cancelCallback, ontop) {
@@ -2024,26 +2029,57 @@ ${HeaderBarSelector}, ${HeaderBarChildrenSelector} { overflow: visible !importan
     let fileUploaderMatch;
 
     if (useBdApi) {
-      // Essayer avec getByKeys qui gère les exports minifiés
-      const bdModule = BdApi.Webpack.getByKeys('upload', 'instantBatchUpload') ||
-        BdApi.Webpack.getByKeys('upload', 'cancel') ||
-        BdApi.Webpack.getByKeys('uploadFiles');
+      // Utiliser getModule avec un filtre strict et searchExports: true pour trouver le bon objet
+      const uploaderFilter = (m) => {
+        return (typeof m.upload === 'function' && (typeof m.instantBatchUpload === 'function' || typeof m.cancel === 'function')) ||
+          (typeof m.uploadFiles === 'function');
+      };
+
+      // Chercher dans les exports par défaut et nommés
+      const bdModule = BdApi.Webpack.getModule(uploaderFilter, { first: true, searchExports: true });
+
       if (bdModule) {
-        fileUploaderMatch = { module: bdModule, path: 'BdApi', pattern: 'BdApi.Webpack.getByKeys' };
+        fileUploaderMatch = { module: bdModule, path: 'BdApi', pattern: 'BdApi.Webpack.getModule' };
       }
     }
 
     if (!fileUploaderMatch) {
       fileUploaderMatch = findModuleRobust([
-        { props: ['upload', 'cancel', 'instantBatchUpload'] },
-        { props: ['upload', 'instantBatchUpload'] },
-        { props: ['upload', 'uploadFiles'] },
+        { filter: (m) => typeof m.upload === 'function' && typeof m.instantBatchUpload === 'function' },
+        { filter: (m) => typeof m.uploadFiles === 'function' },
         { filter: (m) => typeof m.upload === 'function' && typeof m.cancel === 'function' },
+        // Fallback: chercher les propriétés mais vérifier au moins une fonction
+        { props: ['upload', 'instantBatchUpload'], filter: (m) => typeof m.upload === 'function' },
+        { props: ['uploadFiles'], filter: (m) => typeof m.uploadFiles === 'function' }
       ]);
     }
 
+    // Normalisation du module FileUploader
     if (fileUploaderMatch) {
-      modules.FileUploader = fileUploaderMatch.module;
+      let uploader = fileUploaderMatch.module;
+      // Si le module trouvé est un container (ex: { default: {...} }), extraire l'objet interne
+      if (uploader && !uploader.upload && !uploader.uploadFiles && typeof uploader.default === 'object') {
+        if (typeof uploader.default.upload === 'function' || typeof uploader.default.uploadFiles === 'function') {
+          uploader = uploader.default;
+        }
+      }
+      // Vérification finale
+      if (typeof uploader.upload === 'function' || typeof uploader.uploadFiles === 'function') {
+        modules.FileUploader = uploader;
+        deepLogModule(uploader, 'FileUploader (Normalized)');
+      } else {
+        // Fallback: essayer de trouver une propriété qui contient les méthodes
+        const keys = Object.keys(uploader);
+        for (const key of keys) {
+          if (typeof uploader[key] === 'object' && uploader[key] !== null) {
+            if (typeof uploader[key].upload === 'function' || typeof uploader[key].uploadFiles === 'function') {
+              modules.FileUploader = uploader[key];
+              deepLogModule(modules.FileUploader, 'FileUploader (Deep Search)');
+              break;
+            }
+          }
+        }
+      }
       deepLogModule(fileUploaderMatch.module, 'FileUploader');
 
       // Si FileUploader est vide, chercher dans ses propriétés
@@ -2068,11 +2104,41 @@ ${HeaderBarSelector}, ${HeaderBarChildrenSelector} { overflow: visible !importan
     }
 
     // Recherche robuste de CloudUploadPrototype
-    const cloudUploadProtoMatch = findModule(
-      (x) => x.prototype?.uploadFileToCloud && x.prototype.upload
-    );
+    let cloudUploadProtoMatch = null;
+
+    if (useBdApi) {
+      // Discord 2026 : chercher le module qui exporte des fonctions d'upload
+      const uploaderModule = BdApi.Webpack.getModule(
+        (m) => m && typeof m === 'object' && (
+          typeof m.upload === 'function' ||
+          typeof m.uploadFileToCloud === 'function'
+        ),
+        { first: true, searchExports: true }
+      );
+
+      if (uploaderModule) {
+        cloudUploadProtoMatch = uploaderModule;
+      }
+    }
+
+    // Fallback: ancienne méthode prototype
+    if (!cloudUploadProtoMatch) {
+      cloudUploadProtoMatch = findModule(
+        (x) => x.prototype?.uploadFileToCloud && x.prototype.upload
+      );
+    }
+
     if (cloudUploadProtoMatch) {
-      modules.CloudUploadPrototype = cloudUploadProtoMatch.prototype;
+      // Si c'est un module avec prototype, utiliser le prototype
+      if (cloudUploadProtoMatch.prototype) {
+        modules.CloudUploadPrototype = cloudUploadProtoMatch.prototype;
+      } else {
+        // Sinon, c'est probablement un objet direct avec les méthodes
+        modules.CloudUploadPrototype = cloudUploadProtoMatch;
+      }
+      deepLogModule(modules.CloudUploadPrototype, 'CloudUploadPrototype');
+    } else {
+      console.warn('[SDC] CloudUploadPrototype introuvable');
     }
 
     // Recherche robuste de CloudUploadHelper
@@ -3791,7 +3857,6 @@ ${HeaderBarSelector}, ${HeaderBarChildrenSelector} { overflow: visible !importan
         const possiblePaths = [module.Z, module.ZP, module.default];
         for (const path of possiblePaths) {
           if (path && typeof path[functionName] === 'function') {
-            console.log(`[SDC] mirrorFunction: ${moduleName}.${functionName} trouvé dans path alternatif`);
             originalFunction = path[functionName];
             targetExport = path; // Update target export
             break;
@@ -3805,7 +3870,6 @@ ${HeaderBarSelector}, ${HeaderBarChildrenSelector} { overflow: visible !importan
         if (keys.length === 1 && typeof module[keys[0]] === 'object') {
           const singleKey = module[keys[0]];
           if (typeof singleKey[functionName] === 'function') {
-            console.log(`[SDC] mirrorFunction: ${moduleName}.${functionName} trouvé dans single-key object`);
             originalFunction = singleKey[functionName];
             targetExport = singleKey;
           }
@@ -3821,7 +3885,6 @@ ${HeaderBarSelector}, ${HeaderBarChildrenSelector} { overflow: visible !importan
       if (!moduleExports[moduleName]) moduleExports[moduleName] = {};
       moduleExports[moduleName][functionName] = { targetExport, originalFunction };
 
-      console.log(`[SDC] ✓ ${moduleName}.${functionName}() mirrorée avec succès`);
       Discord[mirroredName] = originalFunction;
       Discord[functionName] = function () {
         return originalFunction.apply(targetExport, arguments);
@@ -3868,7 +3931,6 @@ ${HeaderBarSelector}, ${HeaderBarChildrenSelector} { overflow: visible !importan
         return Reflect.apply(detourFunction, this, arguments);
       };
 
-      console.log(`[SDC] ✓ ${moduleName}.${functionName} hooké avec succès`);
       return true;
     };
 
@@ -3904,7 +3966,6 @@ ${HeaderBarSelector}, ${HeaderBarChildrenSelector} { overflow: visible !importan
         }
 
         if (enqueueFunc && enqueueTarget) {
-          console.log(`[SDC] ✓ MessageQueue.${funcName} trouvé et prêt à hooker`);
 
           // Sauvegarder la fonction originale ET son contexte
           Discord.original_enqueue = enqueueFunc;
@@ -4016,6 +4077,8 @@ ${HeaderBarSelector}, ${HeaderBarChildrenSelector} { overflow: visible !importan
       }
       if (modules.CloudUploadPrototype && Discord.cloudUpload) {
         hookFunction('CloudUploadPrototype', 'upload', 'cloudUpload');
+      } else {
+        console.warn('[SDC] cloudUpload non trouvé, modules.CloudUploadPrototype:', !!modules.CloudUploadPrototype, 'Discord.cloudUpload:', !!Discord.cloudUpload);
       }
 
     } catch (err) {
@@ -4280,6 +4343,9 @@ ${HeaderBarSelector}, ${HeaderBarChildrenSelector} { overflow: visible !importan
       return await Discord.original_dispatch.apply(this, arguments);
   }
   async function handleMessages(event) {
+    if (!event.messages || !Array.isArray(event.messages))
+      return await Discord.original_dispatch.apply(this, arguments);
+
     for (let message of event.messages.slice()) //in case they reverse the array
       await processMessage(message);
 
@@ -5476,20 +5542,26 @@ ${HeaderBarSelector}, ${HeaderBarChildrenSelector} { overflow: visible !importan
     ) {
       message.content = payload + ' `🔒`';
     } else {
-      message.content = '';
-      message.embed = {
-        color: BaseColorInt,
-        author: {
-          name: '-----ENCRYPTED MESSAGE-----',
-          icon_url: 'https://i.imgur.com/pFuRfDE.png',
-          url: 'http://gitlab.com/An0/SimpleDiscordCrypt',
-        },
-        description: payload,
-        footer: {
-          text: '🔒',
-          icon_url: 'https://i.imgur.com/zWXtTpX.png',
-        },
-      };
+      // Pour les messages avec attachments uniquement (content vide), ne pas utiliser d'embed
+      // car cela empêche l'affichage des attachments
+      if (content === '') {
+        message.content = payload + ' `🔒`';
+      } else {
+        message.content = '';
+        message.embed = {
+          color: BaseColorInt,
+          author: {
+            name: '-----ENCRYPTED MESSAGE-----',
+            icon_url: 'https://i.imgur.com/pFuRfDE.png',
+            url: 'http://gitlab.com/An0/SimpleDiscordCrypt',
+          },
+          description: payload,
+          footer: {
+            text: '🔒',
+            icon_url: 'https://i.imgur.com/zWXtTpX.png',
+          },
+        };
+      }
     }
     return key;
   }
@@ -5575,34 +5647,42 @@ ${HeaderBarSelector}, ${HeaderBarChildrenSelector} { overflow: visible !importan
   }
 
   async function handleUploadFiles(params) {
+
     let { channelId, uploads, parsedMessage } = params;
 
     let key = await handleSend(channelId, parsedMessage, true);
     if (key == null) return;
 
     let encryptedUploads = [];
-    params.uploads = encryptedUploads;
 
     try {
       for (let editableFile of uploads) {
-        let encryptedFile = editableFile.ENCRYPTED_FILE;
-        if (encryptedFile == null) continue;
-
         let filename = editableFile.filename;
+        let file = editableFile.item.file;
+
+        // Gérer le spoiler
         if (editableFile.spoiler) {
           editableFile.spoiler = false;
           if (!filename.startsWith('SPOILER_'))
             filename = 'SPOILER_' + filename;
         }
 
+        // Chiffrer le nom du fichier
         let encryptedFilename = await encryptFilename(key, filename);
+        let fileBuffer = await Utils.ReadFile(file);
+        let encryptedBuffer = await Utils.AesEncrypt(key, fileBuffer);
+        let encryptedFile = new File([encryptedBuffer], encryptedFilename);
 
+        // Mettre à jour l'objet editableFile
         editableFile.filename = encryptedFilename;
         editableFile.item.file = encryptedFile;
-        //TODO editableFile.description
+        editableFile.ENCRYPTED_FILE = encryptedFile;
 
         encryptedUploads.push(editableFile);
       }
+
+      // Remplacer les uploads par les versions chiffrées
+      params.uploads = encryptedUploads;
     } catch (err) {
       Utils.Error(err);
     }
@@ -5656,13 +5736,23 @@ ${HeaderBarSelector}, ${HeaderBarChildrenSelector} { overflow: visible !importan
   }
 
   function handleGetUploadPayload(cloudFileUpload) {
-    let result = Discord.original_getUploadPayload.apply(this, arguments);
+    // Chercher si ce fichier a été chiffré
+    const originalFilename = cloudFileUpload.filename;
+    const encryptedData = encryptedFilesMap.get(originalFilename);
 
-    let encryptedFile = cloudFileUpload.ENCRYPTED_FILE;
-    if (encryptedFile != null) {
-      result.filename = encryptedFile.name;
-      result.file_size = encryptedFile.size;
+    if (encryptedData && encryptedData.channelId === cloudFileUpload.channelId) {
+
+      // Remplacer le fichier dans cloudFileUpload
+      if (cloudFileUpload.item && cloudFileUpload.item.file) {
+        cloudFileUpload.item.file = encryptedData.encryptedFile;
+        cloudFileUpload.filename = encryptedData.encryptedFilename;
+      }
+
+      // Nettoyer la Map
+      encryptedFilesMap.delete(originalFilename);
     }
+
+    let result = Discord.original_getUploadPayload.apply(this, arguments);
 
     return result;
   }
@@ -5705,7 +5795,60 @@ ${HeaderBarSelector}, ${HeaderBarChildrenSelector} { overflow: visible !importan
     MESSAGE_DELETE: handleDelete,
     MESSAGE_DELETE_BULK: handleDeletes,
     UPLOAD_ATTACHMENT_CLEAR_ALL_FILES: handleClearAttachments,
+    UPLOAD_ATTACHMENT_ADD_FILES: handleAddFiles,
   };
+
+  // Map pour stocker les fichiers chiffrés par leur nom original
+  const encryptedFilesMap = new Map();
+
+  async function handleAddFiles(event) {
+
+    // Vérifier si on est dans un canal chiffré
+    const channelId = event.channelId;
+    const channelConfig = Utils.GetChannelConfig(channelId);
+
+    if (!channelConfig || !channelConfig.e) {
+      return Discord.original_dispatch.apply(this, arguments);
+    }
+
+    const key = await Utils.GetKeyByHash(channelConfig.k);
+
+    if (event.files && key) {
+      const encryptedFiles = [];
+
+      for (let fileItem of event.files) {
+        try {
+          // Les fichiers peuvent être wrappés dans un objet avec une propriété 'file'
+          const file = fileItem.file || fileItem;
+          const filename = file.name;
+
+          const encryptedFilename = await encryptFilename(key, filename);
+          const fileBuffer = await Utils.ReadFile(file);
+          const encryptedBuffer = await Utils.AesEncrypt(key, fileBuffer);
+          const encryptedFile = new File([encryptedBuffer], encryptedFilename);
+
+          // Stocker dans la Map avec le nom original comme clé
+          encryptedFilesMap.set(filename, {
+            encryptedFile,
+            encryptedFilename,
+            channelId
+          });
+
+          // Conserver la structure originale si c'est un wrapper
+          const encryptedItem = fileItem.file ? { ...fileItem, file: encryptedFile } : encryptedFile;
+          encryptedFiles.push(encryptedItem);
+        } catch (err) {
+          console.error('[SDC Upload] Erreur chiffrement fichier:', err);
+          encryptedFiles.push(fileItem); // Garder l'original en cas d'erreur
+        }
+      }
+
+      // Remplacer les fichiers par les versions chiffrées
+      event.files = encryptedFiles;
+    }
+
+    return Discord.original_dispatch.apply(this, arguments);
+  }
 
   var messageLocks = [];
   var UnlockMessages;
@@ -5837,6 +5980,7 @@ ${HeaderBarSelector}, ${HeaderBarChildrenSelector} { overflow: visible !importan
         clearAttachmentBlockedChannels.add(channelId);
 
         await handleUploadFiles(params);
+
 
         fixPendingReply(params.options);
 
