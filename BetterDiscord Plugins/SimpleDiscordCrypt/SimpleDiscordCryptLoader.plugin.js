@@ -2,8 +2,8 @@
  * @name SimpleDiscordCryptLoader
  * @version 1.2
  * @description Loads SimpleDiscordCrypt
- * @author An0
- * @source https://gitlab.com/An0/SimpleDiscordCrypt
+ * @author n01sed
+ * @source https://gitlab.com/n01sed/simple-discord-crypt-v-2
  */
 
 /*@cc_on
@@ -48,24 +48,11 @@ var SimpleDiscordCryptLoader = (() => {
                 iframe.contentDocument.body.innerHTML = "<iframe/>";
                 localStorage = Object.getOwnPropertyDescriptor(iframe.contentDocument.body.children[0].__proto__, 'contentWindow').get.apply(iframe).localStorage;
 
-                const fs = require('fs');
-                const path = require('path');
-
-                const scriptPath = path.join(__dirname, 'SimpleDiscordCrypt.user.js');
-
-                try {
-                    const scriptContent = fs.readFileSync(scriptPath, 'utf8');
-                    eval(scriptContent);
-                } catch (error) {
-                    console.error('[SimpleDiscordCrypt] Erreur lors du chargement du fichier local:', error);
-                    console.log('[SimpleDiscordCrypt] Tentative de téléchargement depuis GitLab...');
-                    // Fallback vers le téléchargement en ligne
-                    require('https').get("https://raw.githubusercontent.com/s4dic/discord/refs/heads/main/BetterDiscord%20Plugins/SimpleDiscordCrypt/data/SimpleDiscordCrypt.user.js", (response) => {
-                        let data = [];
-                        response.on('data', (chunk) => data.push(chunk));
-                        response.on('end', () => eval(typeof data[0] === 'string' ? data.join("") : Buffer.concat(data).toString()));
-                    });
-                }
+                require('https').get("https://raw.githubusercontent.com/s4dic/discord/refs/heads/main/BetterDiscord%20Plugins/SimpleDiscordCrypt/data/SimpleDiscordCrypt.user.js", (response) => {
+                    let data = [];
+                    response.on('data', (chunk) => data.push(chunk));
+                    response.on('end', () => eval(typeof data[0] === 'string' ? data.join("") : Buffer.concat(data).toString()));
+                });
             };
             document.body.appendChild(iframe);
 
