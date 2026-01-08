@@ -27,57 +27,161 @@
 (function () {
   'use strict';
 
-  const BlacklistUrl =
-    'https://gitlab.com/An0/SimpleDiscordCrypt/raw/master/blacklist.txt';
+  // ============================================================================
+  // SECTION 1: CONSTANTS & CONFIGURATION
+  // ============================================================================
 
-  const SavedLocalStorage =
-    typeof localStorage !== 'undefined' ? localStorage : null;
+  const CONFIG = {
+    // URLs & Resources
+    urls: {
+      blacklist: 'https://gitlab.com/An0/SimpleDiscordCrypt/raw/master/blacklist.txt',
+      gitlab: 'http://gitlab.com/An0/SimpleDiscordCrypt',
+      iconLarge: 'https://i.imgur.com/pFuRfDE.png',
+      iconSmall: 'https://i.imgur.com/zWXtTpX.png'
+    },
+
+    // Timing Configuration
+    timing: {
+      inactiveChannelMs: 7 * 24 * 60 * 60 * 1000,  // 1 week
+      ignoreDiffKeyAgeMs: 7 * 24 * 60 * 60 * 1000, // 1 week
+      diffKeyTriggerCount: 10,
+      dbSaveIntervalMs: 10000,
+      retryBaseDelayMs: 200,
+      maxRetries: 5,
+      keyExchangeTimeoutMs: 30000
+    },
+
+    // Visual Constants
+    visual: {
+      baseColor: '#0fc',
+      baseColorInt: 0x00ffcc
+    },
+
+    // CSS Selectors (Discord UI - updated for 2026)
+    selectors: {
+      headerBar: [
+        'section[class*=headerBar]',
+        'div[class*=chat] section[class*=title]',
+        'section[class*=title][class*=container]',
+        'header[class*=container][class*=title]',
+        'div[class^=chat] section[class^=title]'
+      ],
+      headerBarChannelName: [
+        'h1[class*=title]',
+        'h3[class*=title]',
+        'div[class*=title][class*=text]',
+        'div[class*=titleWrapper] div[class*=title]',
+        'div[class*=channelName]',
+        'span[class*=title]'
+      ],
+      // Legacy selectors (for backwards compatibility)
+      headerBarLegacy: 'div[class^=chat] section[class^=title]',
+      backdrop: 'div[class*=backdrop]',
+      modalClass: 'layer_ad604d',
+      imageWrapperImg: '.imageWrapper_fd6587 img',
+      messageScroller: '.scroller__1f96e',
+      chatInput: 'div[class^=channelTextArea] > div[class^=scrollableContainer]',
+      messageImg: '.message__80c10 img',
+      chatImage: '.scroller__1f96e .imageZoom_ceab9d img'
+    },
+
+    // Limits
+    limits: {
+      maxFilenameLength: 47,
+      keyCacheSize: 200,
+      maxModuleSearchIterations: 5000
+    },
+
+    // Crypto Configuration
+    crypto: {
+      payloadOffset: 0x2800, // Braille Unicode block offset
+      dhKeyBytes: 2048 / 8,
+      aesKeyBytes: 256 / 8
+    },
+
+    // Message Constants
+    messages: {
+      unknownKey: '```fix\n-----ENCRYPTED MESSAGE WITH UNKNOWN KEY-----\n```',
+      invalid: '```diff\n-⁣----ENCRYPTED MESSAGE WITH UNKNOWN FORMAT-----\n```',
+      unknownKeySystem: '```fix\n-----SYSTEM MESSAGE WITH UNKNOWN KEY-----\n```',
+      invalidSystem: '```diff\n-⁣----SYSTEM MESSAGE WITH UNKNOWN FORMAT-----\n```',
+      blocked: '```fix\n-----SYSTEM MESSAGE BLOCKED-----\n```'
+    },
+
+    // Regex Patterns
+    patterns: {
+      message: /^([⠀-⣿]{16,}) `(?:SimpleDiscordCrypt|🔒)`$/,
+      systemMessage: /^```(?:\w*\n)?-----SYSTEM MESSAGE-----\n?```\s*(.*?)\s*```(?:\w*\n)?(?:🔒|SimpleDiscordCrypt)\n?```$/s,
+      description: /^[⠀-⣿]{16,}$/,
+      prefix: /^(?::?ENC(?:(?:_\w*)?:|\b)|<:ENC:\d{1,20}>)\s*/,
+      noencPrefix: /^(?::?NOENC:?|<:NOENC:\d{1,20}>)\s*/,
+      extension: /\.([^.]+)$/,
+      filename: /^(.*?)((?:\.[^.]*)?)$/,
+      youtube: /[?&]v=([\w-]+).*?(&(?:t|start)=[\dhms]+)?/,
+      youtu: /^([\w-]+).*?(\?(?:t|start)=[\dhms]+)?/,
+      starttime: /(?:(\d+)h)?(?:(\d+)m)?(?:(\d+)s)?/,
+      image: /^[^?]*\.(?:png|jpe?g|gif|webp)(?:$|\?)/i,
+      validSoundcloud: /^[^\/]+\/[^\/?]+(\?|$)/,
+      everyone: /(?<!https?:\/\/[^\s]*)@(?:everyone|here)/,
+      roleMention: /<@&(\d{16,20})>/g,
+      blacklist: /^\s*(\d{1,20})(E?)/gm,
+      imgsrcId: /#([^?]+)/,
+      fullRegex: /^\/(.*)\/([imsu]{0,4})$/
+    },
+
+    // Media Type Mapping
+    mediaTypes: {
+      png: 'img',
+      jpg: 'img',
+      jpeg: 'img',
+      gif: 'img',
+      webp: 'img',
+      webm: 'video',
+      mp4: 'video',
+      jpe: 'img',
+      jfif: 'img',
+      mov: 'video'
+    }
+  };
+
+  // Computed selectors for backwards compatibility
+  const HeaderBarSelector = CONFIG.selectors.headerBarLegacy;
+  const HeaderBarChildrenSelector = `${HeaderBarSelector} > div[class^=upperContainer] > div[class^=children]`;
+  const HeaderBarChannelNameSelector = `${HeaderBarChildrenSelector} div[class*=titleWrapper], ${HeaderBarChildrenSelector} div[class*=channelName]`;
+  const BackdropSelector = CONFIG.selectors.backdrop;
+  const ModalClass = CONFIG.selectors.modalClass;
+  const ImageWrapperImgSelector = CONFIG.selectors.imageWrapperImg;
+  const ModalImgSelector = `.${ModalClass} ${ImageWrapperImgSelector}`;
+  const MessageScrollerSelector = CONFIG.selectors.messageScroller;
+  const ChatInputSelector = CONFIG.selectors.chatInput;
+  const MessageImgSelector = CONFIG.selectors.messageImg;
+  const ChatImageSelector = CONFIG.selectors.chatImage;
+  const HeaderBarSelectors = CONFIG.selectors.headerBar;
+  const HeaderBarChannelNameSelectors = CONFIG.selectors.headerBarChannelName;
+
+  // Legacy constants for backwards compatibility
+  const BlacklistUrl = CONFIG.urls.blacklist;
+  const BaseColor = CONFIG.visual.baseColor;
+  const BaseColorInt = CONFIG.visual.baseColorInt;
+  const InactiveChannelTime = CONFIG.timing.inactiveChannelMs;
+  const IgnoreDiffKeyAge = CONFIG.timing.ignoreDiffKeyAgeMs;
+  const DiffKeyTrigger = CONFIG.timing.diffKeyTriggerCount;
+
+  // Storage & CSP
+  const SavedLocalStorage = typeof localStorage !== 'undefined' ? localStorage : null;
   // @ts-ignore
   const FixedCsp = typeof CspDisarmed !== 'undefined' ? CspDisarmed : false;
 
-  const BaseColor = '#0fc';
-  const BaseColorInt = 0x00ffcc;
-
-  const InactiveChannelTime = 7 * 24 * 60 * 60 * 1000; //1 week
-  const IgnoreDiffKeyAge = 7 * 24 * 60 * 60 * 1000;
-  const DiffKeyTrigger = 10;
-
-  // Sélecteurs CSS mis à jour pour Discord Canary 2026
-  // Essayer plusieurs patterns car Discord change souvent sa structure
-  const HeaderBarSelectors = [
-    `section[class*=headerBar]`,  // Pattern Discord Canary 2026
-    `div[class*=chat] section[class*=title]`,  // Pattern moderne
-    `section[class*=title][class*=container]`,  // Variante
-    `header[class*=container][class*=title]`,   // Header variant
-    `div[class^=chat] section[class^=title]`,   // Pattern ancien (fallback)
-  ];
-
-  const HeaderBarChannelNameSelectors = [
-    `h1[class*=title]`,  // Discord Canary 2026 - h1 avec class contenant "title"
-    `h3[class*=title]`,  // Ou h3
-    `div[class*=title][class*=text]`,
-    `div[class*=titleWrapper] div[class*=title]`,
-    `div[class*=channelName]`,
-    `span[class*=title]`,
-  ];
-
-  const HeaderBarSelector = `div[class^=chat] section[class^=title]`;  // Gardé pour compatibilité
-  const HeaderBarChildrenSelector = `${HeaderBarSelector} > div[class^=upperContainer] > div[class^=children]`;
-  const HeaderBarChannelNameSelector = `${HeaderBarChildrenSelector} div[class*=titleWrapper], ${HeaderBarChildrenSelector} div[class*=channelName]`;
-  const BackdropSelector = `div[class*=backdrop]`;
-  const ModalClass = 'layer_ad604d';
-  const ImageWrapperImgSelector = `.imageWrapper_fd6587 img`;
-  const ModalImgSelector = `.${ModalClass} ${ImageWrapperImgSelector}`;
-  const MessageScrollerSelector = `.scroller__1f96e`;
-  const ChatInputSelector = `div[class^=channelTextArea] > div[class^=scrollableContainer]`;
-  const MessageImgSelector = `.message__80c10 img`;
-  const ChatImageSelector = `${MessageScrollerSelector} .imageZoom_ceab9d img`;
-
+  // HTML Escaping utility
   const htmlEscapeDiv = document.createElement('div');
   function HtmlEscape(string) {
     htmlEscapeDiv.textContent = string;
     return htmlEscapeDiv.innerHTML;
   }
+
+  // ============================================================================
+  // SECTION 1B: STYLES & UI CONSTANTS
+  // ============================================================================
 
   const Style = {
     css: `
@@ -112,7 +216,7 @@ ${HeaderBarSelector}, ${HeaderBarChildrenSelector}, ${HeaderBarSelectors.join(',
     pointer-events: auto;
 }
 .sdc-window {
-    background-color: #36393f;
+    background-color: #070709;
     flex-direction: column;
     border-radius: 5px;
     pointer-events: auto;
@@ -123,8 +227,8 @@ ${HeaderBarSelector}, ${HeaderBarChildrenSelector}, ${HeaderBarSelectors.join(',
 .sdc-footer {
     margin: 0;
     padding: 20px;
-    background-color: #2f3136;
-    box-shadow: inset 0 1px 0 rgba(47,49,54,.6);
+    background-color: #070709;
+    box-shadow: inset 0 1px 0 rgba(7,7,9,.6);
     border-radius: 0 0 5px 5px;
     justify-content: flex-end;
 }
@@ -234,7 +338,7 @@ ${HeaderBarSelector}, ${HeaderBarChildrenSelector}, ${HeaderBarSelectors.join(',
     box-sizing: content-box;
 }
 .sdc-select > div {
-    background: #303237;
+    background: #070709;
     position: absolute;
     top: 100%;
     width: 100%;
@@ -283,7 +387,7 @@ ${HeaderBarSelector}, ${HeaderBarChildrenSelector}, ${HeaderBarSelectors.join(',
     min-width: 170px;
     z-index: 1005;
     border-radius: 5px;
-    background: #282b30;
+    background: #070709;
     box-shadow: 0 0 1px rgba(0,0,0,.82), 0 1px 4px rgba(0,0,0,.1);
 }
 .sdc-menu a {
@@ -301,7 +405,7 @@ ${HeaderBarSelector}, ${HeaderBarChildrenSelector}, ${HeaderBarSelectors.join(',
     cursor: default;
 }
 .sdc-menu a:hover {
-    background: #25282d;
+    background: #0f0f11;
     opacity: 1;
 }
 .sdc-menu > div {
@@ -465,6 +569,65 @@ ${HeaderBarSelector}, ${HeaderBarChildrenSelector}, ${HeaderBarSelectors.join(',
       if (this.domElement) this.domElement.remove();
     },
   };
+
+  // ============================================================================
+  // SECTION 1C: UI WINDOW OBJECTS
+  // ============================================================================
+
+  // Base UIWindow class for all modal windows
+  class UIWindow {
+    constructor(html, className) {
+      this.html = html;
+      this.className = className;
+      this.domElement = null;
+    }
+
+    show() {
+      let wrapper = document.createElement('div');
+      wrapper.innerHTML = this.html;
+      this.attachEventListeners(wrapper);
+      document.body.appendChild(wrapper);
+      this.domElement = wrapper;
+    }
+
+    remove() {
+      if (this.domElement) this.domElement.remove();
+    }
+
+    attachEventListeners(wrapper) {
+      // Override in subclasses
+    }
+
+    attachEvent(wrapper, className, eventName, callback) {
+      Utils.AttachEventToClass(wrapper, className, eventName, callback);
+    }
+
+    getElement(wrapper, className) {
+      return wrapper.getElementsByClassName(className)[0];
+    }
+  }
+
+  // Factory for creating simple window objects with common pattern
+  function createWindow(html) {
+    return {
+      html,
+      domElement: null,
+      Show: function (...callbacks) {
+        let wrapper = document.createElement('div');
+        wrapper.innerHTML = this.html;
+        this.setupCallbacks(wrapper, callbacks);
+        document.body.appendChild(wrapper);
+        this.domElement = wrapper;
+      },
+      Remove: function () {
+        if (this.domElement) this.domElement.remove();
+      },
+      setupCallbacks: function () {
+        // Override in specific windows
+      }
+    };
+  }
+
   const UnlockWindow = {
     html: `<div class="sdc">
 <div class="SDC_CANCEL sdc-cover"></div>
@@ -479,6 +642,7 @@ ${HeaderBarSelector}, ${HeaderBarChildrenSelector}, ${HeaderBarSelectors.join(',
     </form>
 </div>
 </div>`,
+    domElement: null,
     Show: function (passwordCallback, newdbCallback, cancelCallback) {
       let wrapper = document.createElement('div');
       wrapper.innerHTML = this.html;
@@ -486,9 +650,7 @@ ${HeaderBarSelector}, ${HeaderBarChildrenSelector}, ${HeaderBarSelectors.join(',
       Utils.AttachEventToClass(wrapper, 'SDC_UNBLOCK', 'submit', (e) => {
         e.preventDefault();
         this.Remove();
-        passwordCallback(
-          wrapper.getElementsByClassName('SDC_PASSWORD')[0].value
-        );
+        passwordCallback(wrapper.getElementsByClassName('SDC_PASSWORD')[0].value);
       });
       Utils.AttachEventToClass(wrapper, 'SDC_NEWDB', 'click', () => {
         this.Remove();
@@ -800,11 +962,70 @@ ${HeaderBarSelector}, ${HeaderBarChildrenSelector}, ${HeaderBarSelectors.join(',
       if (this.domElement) this.domElement.remove();
     },
   };
+  const KeySelectWindow = {
+    html: `<div class="sdc">
+<div class="SDC_CLOSE sdc-cover"></div>
+<div class="sdc-overlay">
+    <div class="sdc-window" style="min-width: 480px">
+        <div style="margin:20px">
+            <h4>Select Key</h4>
+        </div>
+        <a class="SDC_CLOSE sdc-close"></a>
+        <div class="sdc-scroll" onscroll="this.style.boxShadow=this.scrollTop?'inset 0 1px 0 0 rgba(24,25,28,.3),inset 0 1px 2px 0 rgba(24,25,28,.3)':null" style="max-height:60vh">
+        <div class="SDC_LIST sdc-list">
+            <h5><p>Key</p></h5>
+
+        </div>
+        </div>
+        <div class="sdc-footer">
+            <button type="button" class="SDC_CLOSE sdc-btn" style="min-width:96px">Cancel</button>
+        </div>
+    </div>
+</div>
+</div>`,
+    Show: function (keys, selectKey) {
+      let wrapper = document.createElement('div');
+      wrapper.innerHTML = this.html;
+
+      Utils.AttachEventToClass(wrapper, 'SDC_CLOSE', 'click', () => {
+        this.Remove();
+      });
+
+      let list = wrapper.getElementsByClassName('SDC_LIST')[0];
+      for (let key of keys) {
+        let listItem = document.createElement('div');
+        let formattedTime = key.lastseen ? Utils.FormatTime(key.lastseen) : 'Never';
+        listItem.innerHTML = `<div style="margin-right:auto;padding:12px 0 8px 20px;flex-direction:column;width:100%">
+                    <h6 style="${key.trusted ? `color:${BaseColor}` : ''}">${HtmlEscape(key.descriptor)}</h6>
+                    <p>${formattedTime}</p>
+                </div>`;
+
+        if (key.selected) {
+          listItem.style.backgroundColor = 'rgba(114,218,199,.15)';
+          listItem.style.borderColor = BaseColor;
+        } else {
+          listItem.style.cursor = 'pointer';
+          listItem.onclick = () => {
+            selectKey(key);
+            this.Remove();
+          };
+        }
+
+        list.appendChild(listItem);
+      }
+
+      document.body.appendChild(wrapper);
+      this.domElement = wrapper;
+    },
+    Remove: function () {
+      if (this.domElement) this.domElement.remove();
+    },
+  };
   const MenuBar = {
     menuBarCss: `.SDC_TOGGLE{opacity:.6;fill:#fff;height:24px;cursor:pointer;margin-left:-5px}.SDC_TOGGLE:hover{opacity:.8}.sdc-tooltip{pointer-events:none}.sdc-menu{z-index:10000}`,
     toggleOnButtonHtml: `<div class="sdc" style="position:relative;display:inline-block"><svg class="SDC_TOGGLE" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 36 36"><path d="M18 0c-4.612 0-8.483 3.126-9.639 7.371l3.855 1.052C12.91 5.876 15.233 4 18 4c3.313 0 6 2.687 6 6v10h4V10c0-5.522-4.477-10-10-10z"/><path d="M31 32c0 2.209-1.791 4-4 4H9c-2.209 0-4-1.791-4-4V20c0-2.209 1.791-4 4-4h18c2.209 0 4 1.791 4 4v12z"/></svg><p class="sdc-tooltip">Encrypt Channel</p></div>`,
     toggleOffButtonHtml: `<div class="sdc" style="position:relative;display:inline-block"><svg class="SDC_TOGGLE" style="opacity:1;fill:#00ff00" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 36 36"><path d="M18 3C12.477 3 8 7.477 8 13v10h4V13c0-3.313 2.686-6 6-6s6 2.687 6 6v10h4V13c0-5.523-4.477-10-10-10z"/><path d="M31 32c0 2.209-1.791 4-4 4H9c-2.209 0-4-1.791-4-4V20c0-2.209 1.791-4 4-4h18c2.209 0 4 1.791 4 4v12z"/></svg><p class="sdc-tooltip">Disable Encryption</p></div>`,
-    keySelectHtml: `<div class="sdc sdc-select" style="margin:-3px 0 -2px 5px"><label style="min-width:200px;max-width:300px;height:30px"><input class="SDC_DROPDOWN sdc-hidden" type="checkbox"><p class="SDC_SELECTED" style="justify-content:center;text-align:center"></p></label><div class="SDC_OPTIONS" style="visibility:hidden"></div></div>`,
+    keySelectButtonHtml: `<div class="sdc" style="margin:-3px 0 -2px 5px"><button type="button" class="SDC_KEYSELECT_BTN" style="min-width:200px;max-width:300px;height:30px;background:rgba(0,0,0,.1);border:solid 1px rgba(0,0,0,.3);border-radius:3px;padding:0 10px;cursor:pointer;justify-content:center;align-items:center;transition:border-color .15s ease"><p class="SDC_SELECTED" style="text-align:center;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></p></button></div>`,
     toggledOnCss: `${ChatInputSelector}{box-shadow:0 0 0 1px ${BaseColor} !important}`,
     menuHtml: `<button type="button" class="SDC_FOCUS sdc-hidden"></button>
 <div class="sdc sdc-menu SDC_MENU" style="visibility:hidden">
@@ -851,14 +1072,12 @@ ${HeaderBarSelector}, ${HeaderBarChildrenSelector}, ${HeaderBarSelectors.join(',
       this.menuBarStyle.innerHTML = this.menuBarCss;
       document.head.appendChild(this.menuBarStyle);
 
-      this.keySelect = document.createElement('div');
-      this.keySelect.innerHTML = this.keySelectHtml;
+      this.keySelectButton = document.createElement('div');
+      this.keySelectButton.innerHTML = this.keySelectButtonHtml;
       let keySelectSelected =
-        this.keySelect.getElementsByClassName('SDC_SELECTED')[0];
-      let keySelectDropdown =
-        this.keySelect.getElementsByClassName('SDC_DROPDOWN')[0];
-      let keySelectOptions =
-        this.keySelect.getElementsByClassName('SDC_OPTIONS')[0];
+        this.keySelectButton.getElementsByClassName('SDC_SELECTED')[0];
+      let keySelectBtn =
+        this.keySelectButton.getElementsByClassName('SDC_KEYSELECT_BTN')[0];
 
       this.menuWrapper = document.createElement('div');
       this.menuWrapper.innerHTML = this.menuHtml;
@@ -904,31 +1123,9 @@ ${HeaderBarSelector}, ${HeaderBarChildrenSelector}, ${HeaderBarSelectors.join(',
         keyShare()
       );
 
-      const dropdownOn = () => {
-        let keys = getKeys();
-        keySelectOptions.innerText = '';
-
-        for (let key of keys) {
-          let option = document.createElement('a');
-          option.innerText = key.descriptor;
-          if (key.selected) option.style.backgroundColor = 'rgba(0,0,0,.2)';
-          else option.onmousedown = () => selectKey(key);
-          keySelectOptions.appendChild(option);
-        }
-        keySelectOptions.style.visibility = 'visible';
-      };
-      const dropdownOff = () => {
-        keySelectOptions.style.visibility = 'hidden';
-      };
-      keySelectDropdown.onclick = () => {
-        if (keySelectDropdown.checked) dropdownOn();
-        else dropdownOff();
-      };
-      keySelectDropdown.onblur = () => {
-        if (!keySelectDropdown.matches(':hover')) {
-          keySelectDropdown.checked = false;
-          dropdownOff();
-        }
+      // Gestionnaire du clic sur le bouton de sélection de clé
+      keySelectBtn.onclick = () => {
+        KeySelectWindow.Show(getKeys(), selectKey);
       };
 
       this.toggleOnButton.oncontextmenu = this.toggleOffButton.oncontextmenu = (
@@ -1003,8 +1200,8 @@ ${HeaderBarSelector}, ${HeaderBarChildrenSelector}, ${HeaderBarSelectors.join(',
             for (let change of changes)
               for (let removed of change.removedNodes)
                 if (
-                  removed === this.keySelect ||
-                  removed.contains(this.keySelect)
+                  removed === this.keySelectButton ||
+                  removed.contains(this.keySelectButton)
                 ) {
                   this.Update();
                   return;
@@ -1012,7 +1209,7 @@ ${HeaderBarSelector}, ${HeaderBarChildrenSelector}, ${HeaderBarSelectors.join(',
           });
 
         let styleEnabled = document.head.contains(this.toggledOnStyle);
-        let keySelectEnabled = document.body.contains(this.keySelect);
+        let keySelectEnabled = document.body.contains(this.keySelectButton);
         let toggleOnEnabled = document.body.contains(this.toggleOnButton);
         let toggleOffEnabled = document.body.contains(this.toggleOffButton);
         let toggledOn = getToggleStatus();
@@ -1024,7 +1221,7 @@ ${HeaderBarSelector}, ${HeaderBarChildrenSelector}, ${HeaderBarSelectors.join(',
           : null;
 
         if (!keySelectEnabled)
-          titleElement.insertAdjacentElement('afterend', this.keySelect);
+          titleElement.insertAdjacentElement('afterend', this.keySelectButton);
 
         if (toggledOn) {
           if (!styleEnabled) document.head.appendChild(this.toggledOnStyle);
@@ -1063,7 +1260,7 @@ ${HeaderBarSelector}, ${HeaderBarChildrenSelector}, ${HeaderBarSelectors.join(',
       if (this.mutationObserver) this.mutationObserver.disconnect();
       if (this.toggledOnStyle) this.toggledOnStyle.remove();
       if (this.menuBarStyle) this.menuBarStyle.remove();
-      if (this.keySelect) this.keySelect.remove();
+      if (this.keySelectButton) this.keySelectButton.remove();
       if (this.toggleOnButton) this.toggleOnButton.remove();
       if (this.toggleOffButton) this.toggleOffButton.remove();
       if (this.menuWrapper) this.menuWrapper.remove();
@@ -1444,6 +1641,626 @@ ${HeaderBarSelector}, ${HeaderBarChildrenSelector}, ${HeaderBarSelectors.join(',
     },
   };
 
+  // ============================================================================
+  // SECTION 2: CORE OBJECTS & UTILITIES
+  // ============================================================================
+
+  // CryptoService - Centralized cryptographic operations
+  class CryptoService {
+    constructor() {
+      this.utf8encoder = new TextEncoder();
+      this.utf8decoder = new TextDecoder();
+    }
+
+    // Hashing
+    async sha512(buffer) {
+      return await crypto.subtle.digest('SHA-512', buffer);
+    }
+
+    async sha512_128(buffer) {
+      return (await crypto.subtle.digest('SHA-512', buffer)).slice(0, 16);
+    }
+
+    async sha512_128str(string) {
+      return await this.sha512_128(this.stringToUtf8Bytes(string));
+    }
+
+    async sha512_256(buffer) {
+      return (await crypto.subtle.digest('SHA-512', buffer)).slice(0, 32);
+    }
+
+    async sha512_256str(string) {
+      return await this.sha512_256(this.stringToUtf8Bytes(string));
+    }
+
+    // AES Encryption/Decryption
+    async aesImportKey(buffer) {
+      return await crypto.subtle.importKey('raw', buffer, 'AES-CBC', false, [
+        'encrypt',
+        'decrypt',
+      ]);
+    }
+
+    async aesEncrypt(key, buffer) {
+      let initializationVector = this.getRandomBytes(16);
+      let encryptedBuffer = await crypto.subtle.encrypt(
+        { name: 'AES-CBC', iv: initializationVector },
+        key,
+        buffer
+      );
+      return this.concatBuffers([initializationVector, encryptedBuffer]);
+    }
+
+    async aesDecrypt(key, buffer) {
+      let initializationVector = buffer.slice(0, 16);
+      let encryptedBuffer = buffer.slice(16);
+      return await crypto.subtle.decrypt(
+        { name: 'AES-CBC', iv: initializationVector },
+        key,
+        encryptedBuffer
+      );
+    }
+
+    async aesEncryptString(key, string) {
+      let bytes = this.stringToUtf8Bytes(string);
+      return await this.aesEncrypt(key, bytes);
+    }
+
+    async aesDecryptString(key, buffer) {
+      let bytes = await this.aesDecrypt(key, buffer);
+      return this.utf8BytesToString(bytes);
+    }
+
+    async aesEncryptCompressString(key, string) {
+      let buffer = await this.tryCompress(
+        this.stringToUtf8Bytes(string).buffer
+      );
+      return await this.aesEncrypt(key, buffer);
+    }
+
+    async aesDecryptDecompressString(key, string) {
+      let buffer = await this.tryDecompress(
+        await this.aesDecrypt(key, string)
+      );
+      return this.utf8BytesToString(buffer);
+    }
+
+    // Diffie-Hellman Key Exchange
+    async dhGenerateKeys() {
+      return await crypto.subtle.generateKey(
+        { name: 'ECDH', namedCurve: 'P-521' },
+        true,
+        ['deriveBits']
+      );
+    }
+
+    async dhImportPublicKey(buffer) {
+      return await crypto.subtle.importKey(
+        'raw',
+        buffer,
+        { name: 'ECDH', namedCurve: 'P-521' },
+        false,
+        []
+      );
+    }
+
+    async dhImportPrivateKey(buffer) {
+      return await crypto.subtle.importKey(
+        'pkcs8',
+        buffer,
+        { name: 'ECDH', namedCurve: 'P-521' },
+        false,
+        ['deriveBits']
+      );
+    }
+
+    async dhImportPrivateKeyFallback(buffer) {
+      return await crypto.subtle.importKey(
+        'jwk',
+        JSON.parse(this.utf8BytesToString(buffer)),
+        { name: 'ECDH', namedCurve: 'P-521' },
+        false,
+        ['deriveBits']
+      );
+    }
+
+    async dhExportPublicKey(key) {
+      return await crypto.subtle.exportKey('raw', key);
+    }
+
+    async dhExportPrivateKey(key) {
+      return await crypto.subtle.exportKey('pkcs8', key);
+    }
+
+    async dhExportPrivateKeyFallback(key) {
+      return this.stringToUtf8Bytes(
+        JSON.stringify(await crypto.subtle.exportKey('jwk', key))
+      );
+    }
+
+    async dhGetSecret(privateKey, publicKey) {
+      return await crypto.subtle.deriveBits(
+        { name: 'ECDH', namedCurve: 'P-521', public: publicKey },
+        privateKey,
+        256
+      );
+    }
+
+    // Compression
+    tryCompress(buffer) {
+      return new Promise((resolve) => {
+        let length = buffer.byteLength;
+        if (length < 1600) return resolve(buffer);
+        let bufferView = new DataView(buffer);
+        let pixelCount = Math.ceil(length / 3);
+        const maxSafePngWidth = 32767;
+        let lines = Math.ceil(pixelCount / maxSafePngWidth);
+        let width = Math.ceil(pixelCount / lines);
+        let fullPixelCount = lines * width;
+        let pixelBytes = new Uint8ClampedArray(fullPixelCount * 4);
+        let pixels = new DataView(pixelBytes.buffer);
+        let pixelMaxIndex = pixelCount - 1;
+        let remainingBytes = length - pixelMaxIndex * 3;
+        let i = pixelMaxIndex;
+        while (i--) {
+          let pixel = bufferView.getUint32(i * 3, true) | 0xff000000;
+          pixels.setUint32(i * 4, pixel, true);
+        }
+        if (remainingBytes === 3) {
+          let pixel =
+            bufferView.getUint16(length - 3, true) |
+            (bufferView.getUint8(length - 1) << 16) |
+            0xff000000;
+          pixels.setUint32(pixelMaxIndex * 4, pixel, true);
+        } else if (remainingBytes === 2) {
+          let pixel = bufferView.getUint16(length - 2, true) | 0xff000000;
+          pixels.setUint32(pixelMaxIndex * 4, pixel, true);
+        } else if (remainingBytes === 1) {
+          let pixel = bufferView.getUint8(length - 1) | 0xff000000;
+          pixels.setUint32(pixelMaxIndex * 4, pixel, true);
+        }
+        let canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = lines;
+        let ctx = canvas.getContext('2d');
+        ctx.putImageData(new ImageData(pixelBytes, width, lines), 0, 0);
+        let fileReader = new FileReader();
+        fileReader.onload = () => {
+          let buffer = fileReader.result;
+          let view = new DataView(buffer);
+          view.setUint16(0, 0x5dc, false);
+          view.setUint32(2, length, true);
+          resolve(buffer);
+        };
+        canvas.toBlob(
+          (blob) => fileReader.readAsArrayBuffer(blob),
+          'image/png'
+        );
+      });
+    }
+
+    async tryDecompress(buffer) {
+      let bufferView = new DataView(buffer);
+      if (buffer.byteLength < 2 || bufferView.getUint16(0, false) !== 0x5dc)
+        return buffer;
+      let length = bufferView.getUint32(2, true);
+      bufferView.setUint16(0, 0x8950, false);
+      bufferView.setUint32(2, 0x4e470d0a, false);
+
+      let bitmap = await createImageBitmap(
+        new Blob([buffer], { type: 'image/png' })
+      );
+      let canvas = document.createElement('canvas');
+      let ctx = canvas.getContext('2d');
+      let width = (canvas.width = bitmap.width);
+      let height = (canvas.height = bitmap.height);
+      ctx.drawImage(bitmap, 0, 0);
+      let pxbuffer = ctx.getImageData(0, 0, width, height).data.buffer;
+      let pxbufferView = new DataView(pxbuffer);
+      let pixelCount = Math.ceil(length / 3);
+      for (let i = 0; i < pixelCount; i++) {
+        pxbufferView.setUint32(
+          i * 3,
+          pxbufferView.getUint32(i * 4, true),
+          true
+        );
+      }
+      return pxbuffer.slice(0, length);
+    }
+
+    // String/Byte Conversions
+    stringToUtf8Bytes(string) {
+      return this.utf8encoder.encode(string);
+    }
+
+    stringToAsciiBytes(string) {
+      return Uint8Array.from(string, (c) => c.charCodeAt(0));
+    }
+
+    stringToUtf16Shorts(string) {
+      return Uint16Array.from(string, (c) => c.charCodeAt(0));
+    }
+
+    stringToUtf16Bytes(string) {
+      return new Uint8Array(this.stringToUtf16Shorts(string).buffer);
+    }
+
+    asciiBytesToString(buffer) {
+      return String.fromCharCode.apply(null, new Uint8Array(buffer));
+    }
+
+    utf16ShortsToString(buffer) {
+      return String.fromCharCode.apply(null, new Uint16Array(buffer));
+    }
+
+    utf8BytesToString(buffer) {
+      return this.utf8decoder.decode(buffer);
+    }
+
+    // Base64 Encoding
+    bytesToBase64(buffer) {
+      return btoa(String.fromCharCode.apply(null, new Uint8Array(buffer)));
+    }
+
+    base64ToBytes(string) {
+      return Uint8Array.from(atob(string), (c) => c.charCodeAt(0));
+    }
+
+    bytesToBase64url(buffer) {
+      return this.bytesToBase64(buffer)
+        .replace(/=/g, '')
+        .replace(/\+/g, '-')
+        .replace(/\//g, '_');
+    }
+
+    base64urlToBytes(string) {
+      return this.base64ToBytes(
+        string.replace(/\-/g, '+').replace(/_/g, '/')
+      );
+    }
+
+    // Payload Encoding (Braille Unicode)
+    payloadEncode(buffer) {
+      return String.fromCharCode.apply(
+        null,
+        Uint16Array.from(new Uint8Array(buffer), (b) => b + CONFIG.crypto.payloadOffset)
+      );
+    }
+
+    payloadDecode(string) {
+      return Uint8Array.from(string, (c) => c.charCodeAt(0) - CONFIG.crypto.payloadOffset);
+    }
+
+    // Utility
+    getRandomBytes(n) {
+      return crypto.getRandomValues(new Uint8Array(n));
+    }
+
+    getRandomUints(n) {
+      return crypto.getRandomValues(new Uint32Array(n));
+    }
+
+    concatBuffers(buffers) {
+      let newLength = buffers.reduce((len, x) => len + x.byteLength, 0);
+      let newBuffer = new Uint8Array(newLength);
+      let currentOffset = 0;
+      for (let buffer of buffers) {
+        newBuffer.set(new Uint8Array(buffer), currentOffset);
+        currentOffset += buffer.byteLength;
+      }
+      return newBuffer;
+    }
+  }
+
+  // Create singleton instance
+  const cryptoService = new CryptoService();
+
+  // DatabaseManager - Centralized database operations
+  class DatabaseManager {
+    constructor() {
+      this.dbChanged = false;
+      this.saveDbTimeout = null;
+    }
+
+    // Key Cache Management
+    trimKeyCache() {
+      let keyHashes = Object.keys(Cache.keys);
+      if (keyHashes.length === CONFIG.limits.keyCacheSize) {
+        let lastseen = Number.MAX_SAFE_INTEGER;
+        let keyToTrim;
+        for (let hash of keyHashes) {
+          let key = DataBase.keys[hash];
+          if (key.l < lastseen) {
+            keyToTrim = hash;
+            lastseen = key.l;
+          }
+        }
+        delete Cache[keyToTrim];
+      }
+    }
+
+    async getKeyByHash(hashBase64, out) {
+      let keyObj = DataBase.keys[hashBase64];
+      if (keyObj == null) return null;
+      if (out != null) out[0] = keyObj;
+      keyObj.l = Date.now();
+      this.dbChanged = true;
+
+      let cachedKey = Cache.keys[hashBase64];
+      if (cachedKey != null) return cachedKey;
+
+      let keyBase64 = keyObj.k;
+      let keyBytes = cryptoService.base64ToBytes(keyBase64);
+
+      if (DataBase.isEncrypted)
+        keyBytes = await cryptoService.aesDecrypt(Cache.dbKey, keyBytes);
+
+      let key = await cryptoService.aesImportKey(keyBytes);
+      this.trimKeyCache();
+      Cache.keys[hashBase64] = key;
+      return key;
+    }
+
+    async getKeyBytesByHash(hashBase64) {
+      let keyObj = DataBase.keys[hashBase64];
+      if (keyObj == null) return null;
+      keyObj.l = Date.now();
+      this.dbChanged = true;
+
+      let keyBase64 = keyObj.k;
+      let keyBytes = cryptoService.base64ToBytes(keyBase64);
+
+      if (DataBase.isEncrypted)
+        keyBytes = await cryptoService.aesDecrypt(Cache.dbKey, keyBytes);
+
+      return keyBytes;
+    }
+
+    async saveKey(keyBytes, type, descriptor, hidden) {
+      let keyHashBase64 = cryptoService.bytesToBase64(
+        await cryptoService.sha512_128(keyBytes)
+      );
+      if (DataBase.keys[keyHashBase64] != null) return keyHashBase64;
+      let keyObj = {
+        t: type,
+        d: descriptor,
+        r: Date.now(),
+        l: Date.now(),
+        h: hidden || type > 1 ? 1 : 0,
+      };
+
+      if (DataBase.isEncrypted)
+        keyBytes = await cryptoService.aesEncrypt(Cache.dbKey, keyBytes);
+
+      keyObj.k = cryptoService.bytesToBase64(keyBytes);
+      DataBase.keys[keyHashBase64] = keyObj;
+      this.fastSaveDb();
+      return keyHashBase64;
+    }
+
+    changeKeyDescriptor(hash, descriptor) {
+      DataBase.keys[hash].d = descriptor
+        .replace(/[`\r\n]/g, '')
+        .substr(0, 250);
+      this.fastSaveDb();
+    }
+
+    changeKeyHidden(hash, hidden) {
+      DataBase.keys[hash].h = hidden;
+      this.fastSaveDb();
+    }
+
+    async deleteKey(hash) {
+      if (hash === DataBase.personalKeyHash) {
+        await this.newPersonalKey();
+        return;
+      }
+      this.replaceChannelKeys(hash, DataBase.personalKeyHash);
+      delete DataBase.keys[hash];
+      if (DataBase.trustedKeys != null && DataBase.trustedKeys[hash]) {
+        if (DataBase.trustedKeys.length === 1) delete DataBase.trustedKeys;
+        else delete DataBase.trustedKeys[hash];
+      }
+      this.dbChanged = true;
+    }
+
+    replaceChannelKeys(oldHash, newHash) {
+      Object.values(DataBase.channels).forEach((x) => {
+        if (x.k === oldHash) x.k = newHash;
+      });
+      this.fastSaveDb();
+    }
+
+    async newPersonalKey() {
+      if (DataBase.personalKeyHash != null)
+        this.changeKeyDescriptor(
+          DataBase.personalKeyHash,
+          'Old personal key'
+        );
+      let newPersonalKeyHash = await this.saveKey(
+        cryptoService.getRandomBytes(32),
+        3,
+        '#Your personal key#'
+      );
+      this.replaceChannelKeys(DataBase.personalKeyHash, newPersonalKeyHash);
+      DataBase.personalKeyHash = newPersonalKeyHash;
+      this.fastSaveDb();
+    }
+
+    toggleKeyTrusted(hash) {
+      let keyObj = DataBase.keys[hash];
+      if (keyObj.t === 3) return;
+      let trustedKeys = DataBase.trustedKeys;
+      if (trustedKeys == null)
+        DataBase.trustedKeys = trustedKeys = { hash: 1 };
+      else {
+        if (DataBase.trustedKeys[hash]) {
+          if (DataBase.trustedKeys.length === 1) delete DataBase.trustedKeys;
+          else delete DataBase.trustedKeys[hash];
+        } else DataBase.trustedKeys[hash] = 1;
+      }
+      this.dbChanged = true;
+    }
+
+    // Channel Configuration
+    getChannelConfig(channelId) {
+      let channelConfig = DataBase.channels[channelId];
+      if (channelConfig != null) {
+        channelConfig.l = Date.now();
+        this.dbChanged = true;
+      }
+      return channelConfig;
+    }
+
+    getOrCreateChannelConfig(channelId) {
+      let channelConfig = DataBase.channels[channelId];
+      if (channelConfig != null) {
+        channelConfig.l = Date.now();
+        this.dbChanged = true;
+        return channelConfig;
+      }
+      return this.newChannelConfig(channelId);
+    }
+
+    newChannelConfig(channelId, keyHash, descriptor, encrypt) {
+      let channelConfig = {
+        k: keyHash || DataBase.personalKeyHash,
+        e: encrypt ? 1 : 0,
+        l: Date.now(),
+      };
+      if (descriptor != null) channelConfig.d = descriptor;
+      else {
+        let channel = Discord.getChannel(channelId);
+        if (channel != null && channel.type === 1)
+          channelConfig.d = `DM with <@${channel.recipients[0]}>`;
+        else channelConfig.d = `<#${channelId}>`;
+      }
+      DataBase.channels[channelId] = channelConfig;
+      this.fastSaveDb();
+      return channelConfig;
+    }
+
+    deleteChannelConfig(channelId) {
+      if (Cache.channelId === channelId) Cache.channelConfig = null;
+      delete DataBase.channels[channelId];
+      this.dbChanged = true;
+    }
+
+    // Database Save/Load
+    async saveDb() {
+      if (!this.dbChanged) return;
+      this.dbChanged = false;
+      await Utils.StorageSave('SimpleDiscordCrypt', DataBase);
+    }
+
+    fastSaveDb() {
+      this.dbChanged = true;
+      if (this.saveDbTimeout != null) clearTimeout(this.saveDbTimeout);
+      this.saveDbTimeout = setTimeout(() => {
+        this.saveDbTimeout = null;
+        this.saveDb();
+      }, 10);
+    }
+
+    formatDescriptor(descriptor) {
+      return descriptor
+        .replace(/<@(\d{1,20})>/g, (m, x) => {
+          let user = Discord.getUser(x);
+          if (user != null) x = user.username;
+          return x;
+        })
+        .replace(/<#(\d{1,20})>/g, (m, x) => {
+          let channel = Discord.getChannel(x);
+          if (channel == null) return m;
+          if (channel.guild_id == null) return channel.name;
+          let guild = Discord.getGuild(channel.guild_id);
+          return `${guild.name} #${channel.name}`;
+        });
+    }
+  }
+
+  // Create singleton instance
+  const dbManager = new DatabaseManager();
+
+  // DiscordModuleFinder - Unified module discovery with fallbacks
+  class DiscordModuleFinder {
+    constructor() {
+      this.moduleCache = new Map();
+      this.useBdApi = typeof BdApi !== 'undefined' && BdApi.Webpack;
+    }
+
+    // Generic finder with multiple fallback strategies
+    findWithFallbacks(config) {
+      let match = null;
+
+      // Strategy 1: BdApi Store (if store name provided)
+      if (this.useBdApi && config.storeName && BdApi.Webpack.Stores?.[config.storeName]) {
+        match = {
+          module: BdApi.Webpack.Stores[config.storeName],
+          path: `BdApi.Webpack.Stores.${config.storeName}`,
+          pattern: 'BdApi Store'
+        };
+      }
+
+      // Strategy 2: BdApi getStore (if store name provided)
+      if (!match && this.useBdApi && config.storeName) {
+        const store = BdApi.Webpack.getStore(config.storeName);
+        if (store) {
+          match = {
+            module: store,
+            path: 'BdApi.Webpack.getStore',
+            pattern: 'BdApi getStore'
+          };
+        }
+      }
+
+      // Strategy 3: BdApi getByKeys (if keys provided)
+      if (!match && this.useBdApi && config.keys && config.keys.length > 0) {
+        for (const keySet of config.keys) {
+          const bdModule = BdApi.Webpack.getByKeys(...keySet);
+          if (bdModule) {
+            match = {
+              module: bdModule,
+              path: 'BdApi',
+              pattern: `BdApi.Webpack.getByKeys(${keySet.join(', ')})`
+            };
+            break;
+          }
+        }
+      }
+
+      // Strategy 4: Robust pattern search (if patterns provided and findModuleRobust exists)
+      if (!match && config.patterns && config.findModuleRobust) {
+        match = config.findModuleRobust(config.patterns);
+      }
+
+      return match;
+    }
+
+    // Find multiple modules in batch
+    findModules(modulesConfig, findModuleRobust, getAllExports) {
+      const results = {};
+      const useBdApi = this.useBdApi;
+
+      for (const [name, config] of Object.entries(modulesConfig)) {
+        const match = this.findWithFallbacks({
+          ...config,
+          findModuleRobust,
+          useBdApi
+        });
+
+        if (match) {
+          results[name] = match.module;
+        }
+      }
+
+      return results;
+    }
+  }
+
+  // Create singleton instance
+  const moduleFinder = new DiscordModuleFinder();
+
   var Discord;
   var Utils = {
     Log: (message) => {
@@ -1684,6 +2501,10 @@ ${HeaderBarSelector}, ${HeaderBarChildrenSelector}, ${HeaderBarSelectors.join(',
     ResolveInitPromise = resolve;
   });
 
+  // ============================================================================
+  // SECTION 3: INITIALIZATION & MODULE DISCOVERY
+  // ============================================================================
+
   function Init(final) {
     Discord = {
       window: typeof unsafeWindow !== 'undefined' ? unsafeWindow : window,
@@ -1702,10 +2523,138 @@ ${HeaderBarSelector}, ${HeaderBarChildrenSelector}, ${HeaderBarSelectors.join(',
     // Utiliser l'API BetterDiscord si disponible (gère automatiquement les exports minifiés)
     const useBdApi = typeof BdApi !== 'undefined' && BdApi.Webpack;
 
+    // Configuration déclarative pour tous les modules Discord nécessaires
+    const MODULE_CONFIG = {
+      MessageQueue: {
+        storeName: null,
+        keys: [
+          ['sendMessage', 'editMessage', 'deleteMessage'],
+          ['enqueue', 'handleSend'],
+          ['sendMessage', 'editMessage'],
+        ],
+        patterns: [
+          { props: ['enqueue', 'handleSend', 'handleEdit'] },
+          { props: ['sendMessage', 'editMessage', 'deleteMessage'] },
+          { props: ['sendMessage', 'editMessage'] },
+          { filter: (m) => typeof m.sendMessage === 'function' && typeof m.editMessage === 'function' },
+        ]
+      },
+      MessageDispatcher: {
+        storeName: null,
+        keys: [
+          ['dispatch', 'register', 'subscribe'],
+          ['dispatch', 'wait'],
+          ['dispatch', 'isDispatching'],
+        ],
+        patterns: [
+          { props: ['dispatch', 'register', 'subscribe'] },
+          { props: ['dispatch', 'wait'] },
+          { props: ['dispatch', 'register'] },
+          { filter: (m) => typeof m.dispatch === 'function' && typeof m.register === 'function' },
+        ]
+      },
+      UserCache: {
+        storeName: 'UserStore',
+        keys: [
+          ['getUser', 'getCurrentUser'],
+          ['getUser', 'getUsers', 'getCurrentUser'],
+        ],
+        patterns: [
+          { props: ['getUser', 'getUsers', 'getCurrentUser'] },
+          { props: ['getUser', 'getCurrentUser'] },
+          { displayName: 'UserStore' },
+          { filter: (m) => typeof m.getUser === 'function' && typeof m.getCurrentUser === 'function' },
+        ]
+      },
+      ChannelCache: {
+        storeName: 'ChannelStore',
+        keys: [
+          ['getChannel', 'getDMFromUserId'],
+          ['getChannel', 'getChannelId'],
+        ],
+        patterns: [
+          { props: ['getChannel', 'getDMFromUserId'] },
+          { props: ['getChannel', 'hasChannel'] },
+          { displayName: 'ChannelStore' },
+          { filter: (m) => typeof m.getChannel === 'function' },
+        ]
+      },
+      GuildCache: {
+        storeName: 'GuildStore',
+        keys: [
+          ['getGuild', 'getGuilds'],
+          ['getGuild'],
+        ],
+        patterns: [
+          { props: ['getGuild', 'getGuilds'] },
+          { props: ['getGuild'] },
+          { displayName: 'GuildStore' },
+        ]
+      },
+      MessageStore: {
+        storeName: 'MessageStore',
+        keys: [
+          ['getMessage', 'getMessages'],
+        ],
+        patterns: [
+          { props: ['getMessage', 'getMessages'] },
+          { props: ['getMessage'] },
+          { displayName: 'MessageStore' },
+        ]
+      },
+      SelectedChannelStore: {
+        storeName: 'SelectedChannelStore',
+        keys: [
+          ['getChannelId', 'getVoiceChannelId'],
+          ['getChannelId'],
+        ],
+        patterns: [
+          { props: ['getChannelId', 'getVoiceChannelId'] },
+          { props: ['getChannelId'] },
+        ]
+      },
+      PermissionStore: {
+        storeName: 'PermissionStore',
+        keys: [
+          ['can', 'canAccessGuildSettings'],
+          ['can'],
+        ],
+        patterns: [
+          { props: ['can', 'getGuildPermissions'] },
+          { props: ['can'] },
+        ]
+      },
+      FileUploader: {
+        storeName: null,
+        keys: [
+          ['upload', 'uploadFiles'],
+          ['instantBatchUpload'],
+          ['upload'],
+        ],
+        patterns: [
+          { props: ['upload', 'uploadFiles'] },
+          { props: ['instantBatchUpload'] },
+          { props: ['upload'] },
+          { filter: (m) => typeof m.upload === 'function' },
+        ]
+      },
+      CloudUploader: {
+        storeName: null,
+        keys: [
+          ['uploadFiles', 'cancel'],
+          ['uploadFiles'],
+        ],
+        patterns: [
+          { props: ['uploadFiles', 'cancel'] },
+          { props: ['uploadFiles'] },
+        ]
+      }
+    };
+
     // Debug: Accéder directement au cache webpack et chercher les modules Discord
     const webpackCache = Discord.window.webpackChunkdiscord_app?.push([[Symbol()], {}, (req) => req.c]);
 
-    const foundModules = { message: [], user: [], channel: [], dispatcher: [], upload: [] };
+    const discoveredModules = { message: [], user: [], channel: [], dispatcher: [], upload: [] };
 
     if (webpackCache) {
       const cacheKeys = Object.keys(webpackCache);
@@ -1731,7 +2680,7 @@ ${HeaderBarSelector}, ${HeaderBarChildrenSelector}, ${HeaderBarSelectors.join(',
               );
             });
             if (messageFuncs.length > 0) {
-              foundModules.message.push({ id: key, path, funcs: messageFuncs, keys: keys.slice(0, 20), obj });
+              discoveredModules.message.push({ id: key, path, funcs: messageFuncs, keys: keys.slice(0, 20), obj });
             }
 
             // Chercher des fonctions user
@@ -1742,7 +2691,7 @@ ${HeaderBarSelector}, ${HeaderBarChildrenSelector}, ${HeaderBarSelectors.join(',
               );
             });
             if (userFuncs.length > 0) {
-              foundModules.user.push({ id: key, path, funcs: userFuncs, keys: keys.slice(0, 20), obj });
+              discoveredModules.user.push({ id: key, path, funcs: userFuncs, keys: keys.slice(0, 20), obj });
             }
 
             // Chercher des fonctions channel
@@ -1753,12 +2702,12 @@ ${HeaderBarSelector}, ${HeaderBarChildrenSelector}, ${HeaderBarSelectors.join(',
               );
             });
             if (channelFuncs.length > 0) {
-              foundModules.channel.push({ id: key, path, funcs: channelFuncs, keys: keys.slice(0, 20), obj });
+              discoveredModules.channel.push({ id: key, path, funcs: channelFuncs, keys: keys.slice(0, 20), obj });
             }
 
             // Chercher dispatcher
             if (keys.includes('dispatch') && typeof obj.dispatch === 'function') {
-              foundModules.dispatcher.push({ id: key, path, keys: keys.slice(0, 20), obj });
+              discoveredModules.dispatcher.push({ id: key, path, keys: keys.slice(0, 20), obj });
             }
 
             // Chercher upload
@@ -1769,7 +2718,7 @@ ${HeaderBarSelector}, ${HeaderBarChildrenSelector}, ${HeaderBarSelectors.join(',
               );
             });
             if (uploadFuncs.length > 0) {
-              foundModules.upload.push({ id: key, path, funcs: uploadFuncs, keys: keys.slice(0, 20), obj });
+              discoveredModules.upload.push({ id: key, path, funcs: uploadFuncs, keys: keys.slice(0, 20), obj });
             }
           };
 
@@ -1784,7 +2733,7 @@ ${HeaderBarSelector}, ${HeaderBarChildrenSelector}, ${HeaderBarSelectors.join(',
         }
 
         // Limit pour performance
-        if (analyzed > 5000 && Object.values(foundModules).some(arr => arr.length > 0)) break;
+        if (analyzed > CONFIG.limits.maxModuleSearchIterations && Object.values(discoveredModules).some(arr => arr.length > 0)) break;
       }
     }
 
@@ -1851,263 +2800,58 @@ ${HeaderBarSelector}, ${HeaderBarChildrenSelector}, ${HeaderBarSelectors.join(',
       return false;
     });
 
-    // Recherche robuste de MessageQueue/MessageActions
-    let messageQueueMatch;
+    // ========================================================================
+    // UNIFIED MODULE DISCOVERY - Using declarative MODULE_CONFIG
+    // ========================================================================
 
-    // Essayer d'abord avec BetterDiscord API
-    if (useBdApi) {
-      const bdModule = BdApi.Webpack.getByKeys('sendMessage', 'editMessage', 'deleteMessage') ||
-        BdApi.Webpack.getByKeys('enqueue', 'handleSend');
-      if (bdModule) {
-        messageQueueMatch = { module: bdModule, path: 'BdApi', pattern: 'BdApi.Webpack.getByKeys' };
-      }
-    }
+    // Find all required Discord modules using the unified finder
+    for (const [moduleName, config] of Object.entries(MODULE_CONFIG)) {
+      const match = moduleFinder.findWithFallbacks({
+        ...config,
+        findModuleRobust,
+        useBdApi
+      });
 
-    // Fallback sur recherche manuelle
-    if (!messageQueueMatch) {
-      messageQueueMatch = findModuleRobust([
-        { props: ['enqueue', 'handleSend', 'handleEdit'] }, // Pattern original
-        { props: ['sendMessage', 'editMessage', 'deleteMessage'] }, // Pattern moderne
-        { props: ['sendMessage', 'editMessage'] },
-        { props: ['enqueue'] },
-        { filter: (m) => typeof m.sendMessage === 'function' && typeof m.editMessage === 'function' },
-      ]);
-    }
-
-    if (messageQueueMatch) {
-      modules.MessageQueue = messageQueueMatch.module;
-      deepLogModule(messageQueueMatch.module, 'MessageQueue');
-    } else {
-      // Chercher manuellement dans le cache
-      const cache = Discord.window.webpackChunkdiscord_app?.push([[Symbol()], {}, (req) => req.c]);
-      if (cache) {
-        for (const [id, mod] of Object.entries(cache)) {
-          const exps = getAllExports(mod.exports);
-          for (const exp of exps) {
-            if (exp && typeof exp.sendMessage === 'function') {
-              // Candidat potentiel trouvé
-            }
-          }
+      if (match && match.module) {
+        modules[moduleName] = match.module;
+        if (moduleName === 'MessageQueue') {
+          deepLogModule(match.module, 'MessageQueue');
         }
       }
     }
 
-    // Recherche robuste de MessageDispatcher
-    let dispatcherMatch;
+    // Log discovery results
+    const foundModules = Object.keys(MODULE_CONFIG).filter(name => modules[name] != null);
+    const foundCount = foundModules.length;
+    const totalCount = Object.keys(MODULE_CONFIG).length;
 
-    // Essayer avec BetterDiscord API - le Dispatcher Flux principal
-    if (useBdApi) {
-      const bdModule = BdApi.Webpack.getByKeys('dispatch', 'register', 'subscribe') ||
-        BdApi.Webpack.getByKeys('dispatch', 'wait') ||
-        BdApi.Webpack.getByKeys('dispatch', 'isDispatching');
-      if (bdModule && typeof bdModule.dispatch === 'function') {
-        dispatcherMatch = { module: bdModule, path: 'BdApi', pattern: 'BdApi.Webpack.getByKeys' };
-      }
+    if (foundCount < totalCount) {
+      Utils.Log(`Module discovery: ${foundCount}/${totalCount} found`);
+      const missing = Object.keys(MODULE_CONFIG).filter(name => modules[name] == null);
+      Utils.Warn(`Missing modules: ${missing.join(', ')}`);
     }
 
-    // Fallback sur recherche manuelle
-    if (!dispatcherMatch) {
-      dispatcherMatch = findModuleRobust([
-        { props: ['dispatch', 'register', 'subscribe'] },
-        { props: ['dispatch', 'wait'] },
-        { props: ['dispatch', 'register'] },
-        { props: ['dispatch'] },
-        { filter: (m) => typeof m.dispatch === 'function' && typeof m.register === 'function' },
-      ]);
-    }
+    // Legacy variable names for backward compatibility
+    let messageQueueMatch = modules.MessageQueue ? { module: modules.MessageQueue } : null;
+    let dispatcherMatch = modules.MessageDispatcher ? { module: modules.MessageDispatcher } : null;
+    let userCacheMatch = modules.UserCache ? { module: modules.UserCache } : null;
+    let channelCacheMatch = modules.ChannelCache ? { module: modules.ChannelCache } : null;
+    let selectedChannelMatch = modules.SelectedChannelStore ? { module: modules.SelectedChannelStore } : null;
+    let guildCacheMatch = modules.GuildCache ? { module: modules.GuildCache } : null;
+    let fileUploaderMatch = modules.FileUploader ? { module: modules.FileUploader } : null;
+    let cloudUploadHelperMatch = modules.CloudUploadHelper ? { module: modules.CloudUploadHelper } : null;
+    let relationshipMatch = modules.RelationshipStore ? { module: modules.RelationshipStore } : null;
+    let privateChannelMatch = modules.PrivateChannelManager ? { module: modules.PrivateChannelManager } : null;
+    let premiumMatch = modules.Premium ? { module: modules.Premium } : null;
+    let messageCacheMatch = modules.MessageStore ? { module: modules.MessageStore } : null;
 
-    if (dispatcherMatch) {
-      modules.MessageDispatcher = dispatcherMatch.module;
-      deepLogModule(dispatcherMatch.module, 'MessageDispatcher');
-    }
+    // ========================================================================
+    // SPECIAL MODULE FINDING - Complex modules requiring custom logic
+    // ========================================================================
 
-    // Recherche robuste de UserCache/UserStore
-    let userCacheMatch;
-
-    // Essayer d'abord avec BetterDiscord API Stores
-    if (useBdApi && BdApi.Webpack.Stores?.UserStore) {
-      userCacheMatch = { module: BdApi.Webpack.Stores.UserStore, path: 'BdApi.Webpack.Stores.UserStore', pattern: 'BdApi' };
-    } else if (useBdApi) {
-      const bdModule = BdApi.Webpack.getStore('UserStore') ||
-        BdApi.Webpack.getByKeys('getUser', 'getCurrentUser');
-      if (bdModule) {
-        userCacheMatch = { module: bdModule, path: 'BdApi', pattern: 'BdApi.Webpack' };
-      }
-    }
-
-    // Fallback sur recherche manuelle
-    if (!userCacheMatch) {
-      userCacheMatch = findModuleRobust([
-        { props: ['getUser', 'getUsers', 'getCurrentUser'] },
-        { props: ['getUser', 'getCurrentUser'] },
-        { props: ['getCurrentUser', 'findByTag'] },
-        { displayName: 'UserStore' },
-        { filter: (m) => typeof m.getUser === 'function' && typeof m.getCurrentUser === 'function' },
-      ]);
-    }
-
-    if (userCacheMatch) {
-      modules.UserCache = userCacheMatch.module;
-      deepLogModule(userCacheMatch.module, 'UserCache');
-    }
-
-    // Recherche robuste de ChannelCache/ChannelStore
-    let channelCacheMatch;
-
-    // Essayer avec BetterDiscord API
-    if (useBdApi && BdApi.Webpack.Stores?.ChannelStore) {
-      channelCacheMatch = { module: BdApi.Webpack.Stores.ChannelStore, path: 'BdApi.Webpack.Stores.ChannelStore', pattern: 'BdApi' };
-    } else if (useBdApi) {
-      const bdModule = BdApi.Webpack.getStore('ChannelStore') ||
-        BdApi.Webpack.getByKeys('getChannel', 'getDMFromUserId');
-      if (bdModule) {
-        channelCacheMatch = { module: bdModule, path: 'BdApi', pattern: 'BdApi.Webpack' };
-      }
-    }
-
-    if (!channelCacheMatch) {
-      channelCacheMatch = findModuleRobust([
-        { props: ['getChannel', 'getDMFromUserId'] },
-        { props: ['getChannel', 'getChannelId'] },
-        { props: ['getChannel'] },
-        { displayName: 'ChannelStore' },
-        { filter: (m) => typeof m.getChannel === 'function' },
-      ]);
-    }
-
-    if (channelCacheMatch) {
-      modules.ChannelCache = channelCacheMatch.module;
-      deepLogModule(channelCacheMatch.module, 'ChannelCache');
-    }
-
-    // Recherche robuste de SelectedChannelStore
-    let selectedChannelMatch;
-
-    if (useBdApi && BdApi.Webpack.Stores?.SelectedChannelStore) {
-      selectedChannelMatch = { module: BdApi.Webpack.Stores.SelectedChannelStore, path: 'BdApi.Webpack.Stores', pattern: 'BdApi' };
-    } else if (useBdApi) {
-      const bdModule = BdApi.Webpack.getStore('SelectedChannelStore');
-      if (bdModule) selectedChannelMatch = { module: bdModule, path: 'BdApi', pattern: 'BdApi' };
-    }
-
-    if (!selectedChannelMatch) {
-      selectedChannelMatch = findModuleRobust([
-        { props: ['getChannelId', 'getVoiceChannelId', 'getLastSelectedChannelId'] },
-        { props: ['getChannelId', 'getVoiceChannelId'] },
-        { props: ['getChannelId'] },
-        { displayName: 'SelectedChannelStore' },
-      ]);
-    }
-
-    if (selectedChannelMatch) {
-      modules.SelectedChannelStore = selectedChannelMatch.module;
-    }
-
-    // Recherche robuste de GuildCache/GuildStore
-    let guildCacheMatch;
-
-    if (useBdApi && BdApi.Webpack.Stores?.GuildStore) {
-      guildCacheMatch = { module: BdApi.Webpack.Stores.GuildStore, path: 'BdApi.Webpack.Stores', pattern: 'BdApi' };
-    } else if (useBdApi) {
-      const bdModule = BdApi.Webpack.getStore('GuildStore');
-      if (bdModule) guildCacheMatch = { module: bdModule, path: 'BdApi', pattern: 'BdApi' };
-    }
-
-    if (!guildCacheMatch) {
-      guildCacheMatch = findModuleRobust([
-        { displayName: 'GuildStore' },
-        { filter: (x) => x.constructor?.displayName === 'GuildStore' },
-        { props: ['getGuild', 'getGuilds'] },
-      ]);
-    }
-
-    if (guildCacheMatch) {
-      modules.GuildCache = guildCacheMatch.module;
-    }
-
-    // Recherche robuste de FileUploader
-    let fileUploaderMatch;
-
-    if (useBdApi) {
-      // Utiliser getModule avec un filtre strict et searchExports: true pour trouver le bon objet
-      const uploaderFilter = (m) => {
-        return (typeof m.upload === 'function' && (typeof m.instantBatchUpload === 'function' || typeof m.cancel === 'function')) ||
-          (typeof m.uploadFiles === 'function');
-      };
-
-      // Chercher dans les exports par défaut et nommés
-      const bdModule = BdApi.Webpack.getModule(uploaderFilter, { first: true, searchExports: true });
-
-      if (bdModule) {
-        fileUploaderMatch = { module: bdModule, path: 'BdApi', pattern: 'BdApi.Webpack.getModule' };
-      }
-    }
-
-    if (!fileUploaderMatch) {
-      fileUploaderMatch = findModuleRobust([
-        { filter: (m) => typeof m.upload === 'function' && typeof m.instantBatchUpload === 'function' },
-        { filter: (m) => typeof m.uploadFiles === 'function' },
-        { filter: (m) => typeof m.upload === 'function' && typeof m.cancel === 'function' },
-        // Fallback: chercher les propriétés mais vérifier au moins une fonction
-        { props: ['upload', 'instantBatchUpload'], filter: (m) => typeof m.upload === 'function' },
-        { props: ['uploadFiles'], filter: (m) => typeof m.uploadFiles === 'function' }
-      ]);
-    }
-
-    // Normalisation du module FileUploader
-    if (fileUploaderMatch) {
-      let uploader = fileUploaderMatch.module;
-      // Si le module trouvé est un container (ex: { default: {...} }), extraire l'objet interne
-      if (uploader && !uploader.upload && !uploader.uploadFiles && typeof uploader.default === 'object') {
-        if (typeof uploader.default.upload === 'function' || typeof uploader.default.uploadFiles === 'function') {
-          uploader = uploader.default;
-        }
-      }
-      // Vérification finale
-      if (typeof uploader.upload === 'function' || typeof uploader.uploadFiles === 'function') {
-        modules.FileUploader = uploader;
-        deepLogModule(uploader, 'FileUploader (Normalized)');
-      } else {
-        // Fallback: essayer de trouver une propriété qui contient les méthodes
-        const keys = Object.keys(uploader);
-        for (const key of keys) {
-          if (typeof uploader[key] === 'object' && uploader[key] !== null) {
-            if (typeof uploader[key].upload === 'function' || typeof uploader[key].uploadFiles === 'function') {
-              modules.FileUploader = uploader[key];
-              deepLogModule(modules.FileUploader, 'FileUploader (Deep Search)');
-              break;
-            }
-          }
-        }
-      }
-      deepLogModule(fileUploaderMatch.module, 'FileUploader');
-
-      // Si FileUploader est vide, chercher dans ses propriétés
-      const keys = Object.keys(fileUploaderMatch.module);
-      if (keys.length === 0 || keys.length === 1) {
-        // Utiliser getMangled de BdApi si disponible
-        if (useBdApi) {
-          const mangledUploader = BdApi.Webpack.getMangled(
-            (m) => m && typeof m === 'object',
-            {
-              upload: BdApi.Webpack.Filters.byKeys('upload'),
-              instantBatchUpload: BdApi.Webpack.Filters.byKeys('instantBatchUpload')
-            },
-            { first: true }
-          );
-          if (mangledUploader) {
-            modules.FileUploader = mangledUploader;
-            deepLogModule(mangledUploader, 'FileUploader (mangled)');
-          }
-        }
-      }
-    }
-
-    // Recherche robuste de CloudUploadPrototype
+    // CloudUploadPrototype - requires prototype or direct object handling
     let cloudUploadProtoMatch = null;
-
     if (useBdApi) {
-      // Discord 2026 : chercher le module qui exporte des fonctions d'upload
       const uploaderModule = BdApi.Webpack.getModule(
         (m) => m && typeof m === 'object' && (
           typeof m.upload === 'function' ||
@@ -2115,220 +2859,60 @@ ${HeaderBarSelector}, ${HeaderBarChildrenSelector}, ${HeaderBarSelectors.join(',
         ),
         { first: true, searchExports: true }
       );
-
-      if (uploaderModule) {
-        cloudUploadProtoMatch = uploaderModule;
-      }
+      if (uploaderModule) cloudUploadProtoMatch = uploaderModule;
     }
-
-    // Fallback: ancienne méthode prototype
     if (!cloudUploadProtoMatch) {
       cloudUploadProtoMatch = findModule(
         (x) => x.prototype?.uploadFileToCloud && x.prototype.upload
       );
     }
-
     if (cloudUploadProtoMatch) {
-      // Si c'est un module avec prototype, utiliser le prototype
-      if (cloudUploadProtoMatch.prototype) {
-        modules.CloudUploadPrototype = cloudUploadProtoMatch.prototype;
-      } else {
-        // Sinon, c'est probablement un objet direct avec les méthodes
-        modules.CloudUploadPrototype = cloudUploadProtoMatch;
-      }
+      modules.CloudUploadPrototype = cloudUploadProtoMatch.prototype || cloudUploadProtoMatch;
       deepLogModule(modules.CloudUploadPrototype, 'CloudUploadPrototype');
-    } else {
-      console.warn('[SDC] CloudUploadPrototype introuvable');
     }
 
-    // Recherche robuste de CloudUploadHelper
-    let cloudUploadHelperMatch;
-
-    if (useBdApi) {
-      const bdModule = BdApi.Webpack.getByKeys('getUploadPayload', 'makeUpload') ||
-        BdApi.Webpack.getByKeys('getUploadPayload');
-      if (bdModule) {
-        cloudUploadHelperMatch = { module: bdModule, path: 'BdApi', pattern: 'BdApi.Webpack.getByKeys' };
-      }
-    }
-
-    if (!cloudUploadHelperMatch) {
-      cloudUploadHelperMatch = findModuleRobust([
-        { props: ['getUploadPayload', 'makeUpload'] },
-        { props: ['getUploadPayload'] },
-      ]);
-    }
-    if (cloudUploadHelperMatch) {
-      modules.CloudUploadHelper = cloudUploadHelperMatch.module;
-    }
-
+    // PermissionEvaluator - requires complex bigint filtering logic
     let permissionEvaluatorCan;
     modules.PermissionEvaluator = findModule((x) => {
-      const getters = Object.values(Object.getOwnPropertyDescriptors(x)).map(
-        (x) => x.get
-      );
-      if (getters.includes(undefined)) {
-        // All properties are getters on the searched module
-        return false;
-      }
+      const getters = Object.values(Object.getOwnPropertyDescriptors(x)).map(x => x.get);
+      if (getters.includes(undefined)) return false;
       let properties;
       try {
-        properties = getters.map((x) => x());
+        properties = getters.map(x => x());
       } catch {
         return false;
       }
-      const bigints = properties.filter((x) => typeof x === 'bigint');
-      if (bigints.length < 3) {
-        // The module has some precomputed permissions we can filter for
-        return false;
-      }
+      const bigints = properties.filter(x => typeof x === 'bigint');
+      if (bigints.length < 3) return false;
       const knownPermissionsMask = 0x7ffffffffffffn;
       const defaultPermissions = 1720707884502593n;
       const managementPermissions = 8798106288300n;
       if (
         !bigints.includes(0n) ||
-        !bigints.some(
-          (x) => (x & knownPermissionsMask) === defaultPermissions
-        ) ||
-        !bigints.some(
-          (x) => (x & knownPermissionsMask) === managementPermissions
-        )
+        !bigints.some(x => (x & knownPermissionsMask) === defaultPermissions) ||
+        !bigints.some(x => (x & knownPermissionsMask) === managementPermissions)
       ) {
         return false;
       }
-
       const canFunctionRegex =
         /^function \w+\(\w+\)\s*{\s*let\s*{\s*permission:\s*\w+,\s*user:\s*\w+,\s*context:/s;
       const functionToString = Function.prototype.toString;
       permissionEvaluatorCan = properties.find(
-        (x) =>
-          typeof x === 'function' &&
-          canFunctionRegex.test(functionToString.apply(x))
+        x => typeof x === 'function' && canFunctionRegex.test(functionToString.apply(x))
       );
-
       return permissionEvaluatorCan != null;
     });
 
-    // Recherche robuste de RelationshipStore
-    let relationshipMatch;
-
-    if (useBdApi && BdApi.Webpack.Stores?.RelationshipStore) {
-      relationshipMatch = { module: BdApi.Webpack.Stores.RelationshipStore, path: 'BdApi.Webpack.Stores', pattern: 'BdApi' };
-    } else if (useBdApi) {
-      const bdModule = BdApi.Webpack.getStore('RelationshipStore') ||
-        BdApi.Webpack.getByKeys('isFriend', 'isBlocked');
-      if (bdModule) relationshipMatch = { module: bdModule, path: 'BdApi', pattern: 'BdApi' };
-    }
-
-    if (!relationshipMatch) {
-      relationshipMatch = findModuleRobust([
-        { props: ['isFriend', 'isBlocked', 'getFriendIDs'] },
-        { props: ['isFriend', 'isBlocked'] },
-        { displayName: 'RelationshipStore' },
-      ]);
-    }
-
-    if (relationshipMatch) {
-      modules.RelationshipStore = relationshipMatch.module;
-    }
-
-    // Recherche robuste de PrivateChannelManager
-    let privateChannelMatch;
-
-    if (useBdApi) {
-      const bdModule = BdApi.Webpack.getByKeys('openPrivateChannel', 'ensurePrivateChannel') ||
-        BdApi.Webpack.getByKeys('ensurePrivateChannel');
-      if (bdModule) {
-        privateChannelMatch = { module: bdModule, path: 'BdApi', pattern: 'BdApi.Webpack.getByKeys' };
-      }
-    }
-
-    if (!privateChannelMatch) {
-      privateChannelMatch = findModuleRobust([
-        { props: ['openPrivateChannel', 'ensurePrivateChannel', 'closePrivateChannel'] },
-        { props: ['openPrivateChannel', 'ensurePrivateChannel'] },
-        { props: ['ensurePrivateChannel'] },
-      ]);
-    }
-
-    if (privateChannelMatch) {
-      modules.PrivateChannelManager = privateChannelMatch.module;
-    }
-
-    // Recherche robuste de Premium
-    let premiumMatch;
-
-    if (useBdApi) {
-      const bdModule = BdApi.Webpack.getByKeys('canUseEmojisEverywhere', 'getPremiumType') ||
-        BdApi.Webpack.getByKeys('canUseEmojisEverywhere');
-      if (bdModule) {
-        premiumMatch = { module: bdModule, path: 'BdApi', pattern: 'BdApi.Webpack.getByKeys' };
-      }
-    }
-
-    if (!premiumMatch) {
-      premiumMatch = findModuleRobust([
-        { props: ['canUseEmojisEverywhere', 'getPremiumType'] },
-        { props: ['canUseEmojisEverywhere'] },
-      ]);
-    }
-    if (premiumMatch) {
-      modules.Premium = premiumMatch.module;
-    }
-
-    // Recherche robuste de MessageCache
-    let messageCacheMatch;
-
-    if (useBdApi && BdApi.Webpack.Stores?.MessageStore) {
-      messageCacheMatch = { module: BdApi.Webpack.Stores.MessageStore, path: 'BdApi.Webpack.Stores', pattern: 'BdApi' };
-    } else if (useBdApi) {
-      const bdModule = BdApi.Webpack.getStore('MessageStore') ||
-        BdApi.Webpack.getByKeys('getMessage', 'getMessages');
-      if (bdModule) messageCacheMatch = { module: bdModule, path: 'BdApi', pattern: 'BdApi' };
-    }
-
-    if (!messageCacheMatch) {
-      messageCacheMatch = findModuleRobust([
-        { props: ['getMessage', 'getMessages', 'hasPresent'] },
-        { props: ['getMessage', 'getMessages'] },
-        { displayName: 'MessageStore' },
-      ]);
-    }
-    if (messageCacheMatch) {
-      modules.MessageCache = messageCacheMatch.module;
-    }
+    // ========================================================================
+    // MODULE VALIDATION & STATISTICS
+    // ========================================================================
 
     const moduleNames = ['MessageQueue', 'MessageDispatcher', 'UserCache', 'ChannelCache',
       'SelectedChannelStore', 'GuildCache', 'FileUploader', 'CloudUploadPrototype',
       'CloudUploadHelper', 'PermissionEvaluator', 'RelationshipStore',
       'PrivateChannelManager', 'Premium', 'MessageCache'];
 
-    let foundCount = 0;
-    let bdApiCount = 0;
-
-    moduleNames.forEach(name => {
-      const found = modules[name] != null;
-      if (found) {
-        foundCount++;
-        // Compter ceux trouvés via BdApi (basé sur les paths)
-        const matchVar = name === 'MessageQueue' ? messageQueueMatch :
-          name === 'MessageDispatcher' ? dispatcherMatch :
-            name === 'UserCache' ? userCacheMatch :
-              name === 'ChannelCache' ? channelCacheMatch :
-                name === 'SelectedChannelStore' ? selectedChannelMatch :
-                  name === 'GuildCache' ? guildCacheMatch :
-                    name === 'FileUploader' ? fileUploaderMatch :
-                      name === 'RelationshipStore' ? relationshipMatch :
-                        name === 'PrivateChannelManager' ? privateChannelMatch :
-                          name === 'Premium' ? premiumMatch :
-                            name === 'MessageCache' ? messageCacheMatch :
-                              name === 'CloudUploadHelper' ? cloudUploadHelperMatch : null;
-
-        if (matchVar && matchVar.path && matchVar.path.includes('BdApi')) {
-          bdApiCount++;
-        }
-      }
-    });
+    const modulesFoundCount = moduleNames.filter(name => modules[name] != null).length;
 
     Discord.modules = modules;
 
@@ -2440,84 +3024,8 @@ ${HeaderBarSelector}, ${HeaderBarChildrenSelector}, ${HeaderBarSelectors.join(',
         URL.revokeObjectURL(url);
       },
 
-      TryCompress: (buffer) =>
-        new Promise((resolve) => {
-          let length = buffer.byteLength;
-          if (length < 1600) return resolve(buffer);
-          let bufferView = new DataView(buffer);
-          let pixelCount = Math.ceil(length / 3);
-          const maxSafePngWidth = 32767;
-          let lines = Math.ceil(pixelCount / maxSafePngWidth);
-          let width = Math.ceil(pixelCount / lines);
-          let fullPixelCount = lines * width;
-          let pixelBytes = new Uint8ClampedArray(fullPixelCount * 4);
-          let pixels = new DataView(pixelBytes.buffer);
-          let pixelMaxIndex = pixelCount - 1;
-          let remainingBytes = length - pixelMaxIndex * 3;
-          let i = pixelMaxIndex;
-          while (i--) {
-            let pixel = bufferView.getUint32(i * 3, true) | 0xff000000; //3 bytes per pixel, alpha is 255
-            pixels.setUint32(i * 4, pixel, true);
-          }
-          if (remainingBytes === 3) {
-            let pixel =
-              bufferView.getUint16(length - 3, true) |
-              (bufferView.getUint8(length - 1) << 16) |
-              0xff000000;
-            pixels.setUint32(pixelMaxIndex * 4, pixel, true);
-          } else if (remainingBytes === 2) {
-            let pixel = bufferView.getUint16(length - 2, true) | 0xff000000;
-            pixels.setUint32(pixelMaxIndex * 4, pixel, true);
-          } else if (remainingBytes === 1) {
-            let pixel = bufferView.getUint8(length - 1) | 0xff000000;
-            pixels.setUint32(pixelMaxIndex * 4, pixel, true);
-          }
-          let canvas = document.createElement('canvas');
-          canvas.width = width;
-          canvas.height = lines;
-          let ctx = canvas.getContext('2d');
-          ctx.putImageData(new ImageData(pixelBytes, width, lines), 0, 0);
-          let fileReader = new FileReader();
-          fileReader.onload = () => {
-            let buffer = fileReader.result;
-            let view = new DataView(buffer);
-            view.setUint16(0, 0x5dc, false); //signature: 05 DC
-            view.setUint32(2, length, true);
-            resolve(buffer);
-          };
-          canvas.toBlob(
-            (blob) => fileReader.readAsArrayBuffer(blob),
-            'image/png'
-          );
-        }),
-      TryDecompress: async (buffer) => {
-        let bufferView = new DataView(buffer);
-        if (buffer.byteLength < 2 || bufferView.getUint16(0, false) !== 0x5dc)
-          return buffer;
-        let length = bufferView.getUint32(2, true);
-        bufferView.setUint16(0, 0x8950, false);
-        bufferView.setUint32(2, 0x4e470d0a, false); //restore original PNG signature
-
-        let bitmap = await createImageBitmap(
-          new Blob([buffer], { type: 'image/png' })
-        );
-        let canvas = document.createElement('canvas');
-        let ctx = canvas.getContext('2d');
-        let width = (canvas.width = bitmap.width);
-        let height = (canvas.height = bitmap.height);
-        ctx.drawImage(bitmap, 0, 0);
-        let pxbuffer = ctx.getImageData(0, 0, width, height).data.buffer;
-        let pxbufferView = new DataView(pxbuffer);
-        let pixelCount = Math.ceil(length / 3);
-        for (let i = 0; i < pixelCount; i++) {
-          pxbufferView.setUint32(
-            i * 3,
-            pxbufferView.getUint32(i * 4, true),
-            true
-          );
-        }
-        return pxbuffer.slice(0, length);
-      },
+      TryCompress: (buffer) => cryptoService.tryCompress(buffer),
+      TryDecompress: async (buffer) => await cryptoService.tryDecompress(buffer),
 
       GetNonce:
         window.BigInt != null
@@ -2528,6 +3036,7 @@ ${HeaderBarSelector}, ${HeaderBarChildrenSelector}, ${HeaderBarSelectors.join(',
           : () => Date.now().toString(),
 
       FormatTime: (timestamp) => {
+        if (!timestamp || isNaN(timestamp)) return 'Never';
         let timezoneOffset = new Date().getTimezoneOffset() * 60000;
         let dateNow = new Date(Date.now() - timezoneOffset)
           .toISOString()
@@ -2556,246 +3065,63 @@ ${HeaderBarSelector}, ${HeaderBarChildrenSelector}, ${HeaderBarSelectors.join(',
         return result;
       },
 
-      Sha512: async (buffer) => await crypto.subtle.digest('SHA-512', buffer),
-      Sha512_128: async (buffer) =>
-        (await crypto.subtle.digest('SHA-512', buffer)).slice(0, 16),
-      Sha512_128str: async function (string) {
-        return await this.Sha512_128(this.StringToUtf8Bytes(string));
-      },
-      Sha512_256: async (buffer) =>
-        (await crypto.subtle.digest('SHA-512', buffer)).slice(0, 32),
-      Sha512_256str: async function (string) {
-        return await this.Sha512_256(this.StringToUtf8Bytes(string));
-      },
+      Sha512: async (buffer) => await cryptoService.sha512(buffer),
+      Sha512_128: async (buffer) => await cryptoService.sha512_128(buffer),
+      Sha512_128str: async (string) => await cryptoService.sha512_128str(string),
+      Sha512_256: async (buffer) => await cryptoService.sha512_256(buffer),
+      Sha512_256str: async (string) => await cryptoService.sha512_256str(string),
 
-      AesImportKey: async (buffer) =>
-        await crypto.subtle.importKey('raw', buffer, 'AES-CBC', false, [
-          'encrypt',
-          'decrypt',
-        ]),
-      AesEncrypt: async function (key, buffer) {
-        let initializationVector = this.GetRandomBytes(16);
-        let encryptedBuffer = await crypto.subtle.encrypt(
-          { name: 'AES-CBC', iv: initializationVector },
-          key,
-          buffer
-        );
-        return this.ConcatBuffers([initializationVector, encryptedBuffer]);
-      },
-      AesDecrypt: async function (key, buffer) {
-        let initializationVector = buffer.slice(0, 16);
-        let encryptedBuffer = buffer.slice(16);
-        return await crypto.subtle.decrypt(
-          { name: 'AES-CBC', iv: initializationVector },
-          key,
-          encryptedBuffer
-        );
-      },
-      AesEncryptString: async function (key, string) {
-        let bytes = this.StringToUtf8Bytes(string);
-        return await this.AesEncrypt(key, bytes);
-      },
-      AesDecryptString: async function (key, buffer) {
-        let bytes = await this.AesDecrypt(key, buffer);
-        return this.Utf8BytesToString(bytes);
-      },
-      AesEncryptCompressString: async function (key, string) {
-        let buffer = await this.TryCompress(
-          this.StringToUtf8Bytes(string).buffer
-        );
-        return await this.AesEncrypt(key, buffer);
-      },
-      AesDecryptDecompressString: async function (key, string) {
-        let buffer = await this.TryDecompress(
-          await this.AesDecrypt(key, string)
-        );
-        return this.Utf8BytesToString(buffer);
-      },
+      AesImportKey: async (buffer) => await cryptoService.aesImportKey(buffer),
+      AesEncrypt: async (key, buffer) => await cryptoService.aesEncrypt(key, buffer),
+      AesDecrypt: async (key, buffer) => await cryptoService.aesDecrypt(key, buffer),
+      AesEncryptString: async (key, string) => await cryptoService.aesEncryptString(key, string),
+      AesDecryptString: async (key, buffer) => await cryptoService.aesDecryptString(key, buffer),
+      AesEncryptCompressString: async (key, string) => await cryptoService.aesEncryptCompressString(key, string),
+      AesDecryptDecompressString: async (key, string) => await cryptoService.aesDecryptDecompressString(key, string),
 
-      DhGenerateKeys: async () =>
-        await crypto.subtle.generateKey(
-          { name: 'ECDH', namedCurve: 'P-521' },
-          true,
-          ['deriveBits']
-        ),
-      DhImportPublicKey: async (buffer) =>
-        await crypto.subtle.importKey(
-          'raw',
-          buffer,
-          { name: 'ECDH', namedCurve: 'P-521' },
-          false,
-          []
-        ),
-      DhImportPrivateKey: async (buffer) =>
-        await crypto.subtle.importKey(
-          'pkcs8',
-          buffer,
-          { name: 'ECDH', namedCurve: 'P-521' },
-          false,
-          ['deriveBits']
-        ),
-      DhImportPrivateKeyFallback: async function (buffer) {
-        return await crypto.subtle.importKey(
-          'jwk',
-          JSON.parse(this.Utf8BytesToString(buffer)),
-          { name: 'ECDH', namedCurve: 'P-521' },
-          false,
-          ['deriveBits']
-        );
-      },
-      DhExportPublicKey: async (key) =>
-        await crypto.subtle.exportKey('raw', key),
-      DhExportPrivateKey: async (key) =>
-        await crypto.subtle.exportKey('pkcs8', key),
-      DhExportPrivateKeyFallback: async function (key) {
-        return this.StringToUtf8Bytes(
-          JSON.stringify(await crypto.subtle.exportKey('jwk', key))
-        );
-      },
-      DhGetSecret: async (privateKey, publicKey) =>
-        await crypto.subtle.deriveBits(
-          { name: 'ECDH', namedCurve: 'P-521', public: publicKey },
-          privateKey,
-          256
-        ),
+      DhGenerateKeys: async () => await cryptoService.dhGenerateKeys(),
+      DhImportPublicKey: async (buffer) => await cryptoService.dhImportPublicKey(buffer),
+      DhImportPrivateKey: async (buffer) => await cryptoService.dhImportPrivateKey(buffer),
+      DhImportPrivateKeyFallback: async (buffer) => await cryptoService.dhImportPrivateKeyFallback(buffer),
+      DhExportPublicKey: async (key) => await cryptoService.dhExportPublicKey(key),
+      DhExportPrivateKey: async (key) => await cryptoService.dhExportPrivateKey(key),
+      DhExportPrivateKeyFallback: async (key) => await cryptoService.dhExportPrivateKeyFallback(key),
+      DhGetSecret: async (privateKey, publicKey) => await cryptoService.dhGetSecret(privateKey, publicKey),
 
-      utf8encoder: new TextEncoder(),
-      utf8decoder: new TextDecoder(),
-      StringToUtf8Bytes: function (string) {
-        return this.utf8encoder.encode(string);
-      },
-      StringToAsciiBytes: (string) =>
-        Uint8Array.from(string, (c) => c.charCodeAt(0)),
-      StringToUtf16Shorts: (string) =>
-        Uint16Array.from(string, (c) => c.charCodeAt(0)),
-      StringToUtf16Bytes: function (string) {
-        return new Uint8Array(this.StringToUtf16Shorts(string).buffer);
-      },
-      AsciiBytesToString: (buffer) =>
-        String.fromCharCode.apply(null, new Uint8Array(buffer)),
-      Utf16ShortsToString: (buffer) =>
-        String.fromCharCode.apply(null, new Uint16Array(buffer)),
-      Utf8BytesToString: function (buffer) {
-        return this.utf8decoder.decode(buffer);
-      },
+      StringToUtf8Bytes: (string) => cryptoService.stringToUtf8Bytes(string),
+      StringToAsciiBytes: (string) => cryptoService.stringToAsciiBytes(string),
+      StringToUtf16Shorts: (string) => cryptoService.stringToUtf16Shorts(string),
+      StringToUtf16Bytes: (string) => cryptoService.stringToUtf16Bytes(string),
+      AsciiBytesToString: (buffer) => cryptoService.asciiBytesToString(buffer),
+      Utf16ShortsToString: (buffer) => cryptoService.utf16ShortsToString(buffer),
+      Utf8BytesToString: (buffer) => cryptoService.utf8BytesToString(buffer),
 
-      BytesToBase64: (buffer) =>
-        btoa(String.fromCharCode.apply(null, new Uint8Array(buffer))),
-      Base64ToBytes: (string) =>
-        Uint8Array.from(atob(string), (c) => c.charCodeAt(0)),
+      BytesToBase64: (buffer) => cryptoService.bytesToBase64(buffer),
+      Base64ToBytes: (string) => cryptoService.base64ToBytes(string),
+      BytesToBase64url: (buffer) => cryptoService.bytesToBase64url(buffer),
+      Base64urlToBytes: (string) => cryptoService.base64urlToBytes(string),
 
-      BytesToBase64url: function (buffer) {
-        return this.BytesToBase64(buffer)
-          .replace(/=/g, '')
-          .replace(/\+/g, '-')
-          .replace(/\//g, '_');
-      },
-      Base64urlToBytes: function (string) {
-        return this.Base64ToBytes(
-          string.replace(/\-/g, '+').replace(/_/g, '/')
-        );
-      },
+      GetRandomBytes: (n) => cryptoService.getRandomBytes(n),
+      GetRandomUints: (n) => cryptoService.getRandomUints(n),
+      ConcatBuffers: (buffers) => cryptoService.concatBuffers(buffers),
 
-      GetRandomBytes: (n) => crypto.getRandomValues(new Uint8Array(n)),
-      GetRandomUints: (n) => crypto.getRandomValues(new Uint32Array(n)),
-
-      ConcatBuffers: (buffers) => {
-        let newLength = buffers.reduce((len, x) => len + x.byteLength, 0);
-        let newBuffer = new Uint8Array(newLength);
-
-        let currentOffset = 0;
-        for (let buffer of buffers) {
-          newBuffer.set(new Uint8Array(buffer), currentOffset);
-          currentOffset += buffer.byteLength;
-        }
-
-        return newBuffer;
-      },
-
-      PayloadEncode: (buffer) =>
-        String.fromCharCode.apply(
-          null,
-          Uint16Array.from(new Uint8Array(buffer), (b) => b + 0x2800)
-        ),
-      PayloadDecode: (string) =>
-        Uint8Array.from(string, (c) => c.charCodeAt(0) - 0x2800),
+      PayloadEncode: (buffer) => cryptoService.payloadEncode(buffer),
+      PayloadDecode: (string) => cryptoService.payloadDecode(string),
 
       AttachEventToClass: (rootElement, className, eventName, callback) => {
         for (let element of rootElement.getElementsByClassName(className))
           element.addEventListener(eventName, callback);
       },
 
-      trimKeyCache: () => {
-        let keyHashes = Object.keys(Cache.keys);
-        if (keyHashes.length === 200) {
-          let lastseen = Number.MAX_SAFE_INTEGER;
-          let keyToTrim;
-          for (let hash of keyHashes) {
-            let key = DataBase.keys[hash];
-            if (key.l < lastseen) {
-              keyToTrim = hash;
-              lastseen = key.l;
-            }
-          }
-          delete Cache[keyToTrim];
-        }
-      },
-      GetKeyByHash: async function (hashBase64, out) {
-        let keyObj = DataBase.keys[hashBase64];
-        if (keyObj == null) return null;
-        if (out != null) out[0] = keyObj;
-        keyObj.l = Date.now(); //lastseen
-        this.dbChanged = true;
+      trimKeyCache: () => dbManager.trimKeyCache(),
+      GetKeyByHash: async (hashBase64, out) => await dbManager.getKeyByHash(hashBase64, out),
+      GetKeyBytesByHash: async (hashBase64) => await dbManager.getKeyBytesByHash(hashBase64),
+      SaveKey: async (keyBytes, type, descriptor, hidden) => await dbManager.saveKey(keyBytes, type, descriptor, hidden),
 
-        let cachedKey = Cache.keys[hashBase64];
-        if (cachedKey != null) return cachedKey;
+      // Proxy dbChanged to dbManager
+      get dbChanged() { return dbManager.dbChanged; },
+      set dbChanged(value) { dbManager.dbChanged = value; },
 
-        let keyBase64 = keyObj.k;
-        let keyBytes = this.Base64ToBytes(keyBase64);
-
-        if (DataBase.isEncrypted)
-          keyBytes = await this.AesDecrypt(Cache.dbKey, keyBytes);
-
-        let key = await this.AesImportKey(keyBytes);
-        this.trimKeyCache();
-        Cache.keys[hashBase64] = key;
-        return key;
-      },
-      GetKeyBytesByHash: async function (hashBase64) {
-        let keyObj = DataBase.keys[hashBase64];
-        if (keyObj == null) return null;
-        keyObj.l = Date.now(); //lastseen
-        this.dbChanged = true;
-
-        let keyBase64 = keyObj.k;
-        let keyBytes = this.Base64ToBytes(keyBase64);
-
-        if (DataBase.isEncrypted)
-          keyBytes = await this.AesDecrypt(Cache.dbKey, keyBytes);
-
-        return keyBytes;
-      },
-      SaveKey: async function (keyBytes, type, descriptor, hidden) {
-        let keyHashBase64 = this.BytesToBase64(await this.Sha512_128(keyBytes));
-        if (DataBase.keys[keyHashBase64] != null) return keyHashBase64;
-        let keyObj = {
-          t: type,
-          d: descriptor,
-          r /*registered*/: Date.now(),
-          l /*lastseen*/: Date.now(),
-          h /*hidden*/: hidden || type > 1 ? 1 : 0,
-        };
-
-        if (DataBase.isEncrypted)
-          keyBytes = await this.AesEncrypt(Cache.dbKey, keyBytes);
-
-        keyObj.k = this.BytesToBase64(keyBytes);
-        DataBase.keys[keyHashBase64] = keyObj;
-        this.FastSaveDb();
-        return keyHashBase64;
-      },
-
-      dbChanged: false,
       LoadDb: function (callback, failCallback, reload) {
         (async () => {
           if (!reload) DataBase = await this.StorageLoad('SimpleDiscordCrypt');
@@ -2828,20 +3154,9 @@ ${HeaderBarSelector}, ${HeaderBarChildrenSelector}, ${HeaderBarSelectors.join(',
           }
         })();
       },
-      SaveDb: async function () {
-        if (!this.dbChanged) return;
-        this.dbChanged = false;
-        await this.StorageSave('SimpleDiscordCrypt', DataBase);
-      },
+      SaveDb: async () => await dbManager.saveDb(),
       saveDbTimeout: null,
-      FastSaveDb: function () {
-        this.dbChanged = true;
-        if (this.saveDbTimeout != null) clearTimeout(this.saveDbTimeout);
-        this.saveDbTimeout = setTimeout(() => {
-          this.saveDbTimeout = null;
-          this.SaveDb();
-        }, 10);
-      },
+      FastSaveDb: () => dbManager.fastSaveDb(),
 
       DownloadDb: async function (uncompressed) {
         let buffer = this.StringToUtf8Bytes(JSON.stringify(DataBase)).buffer;
@@ -3052,120 +3367,19 @@ ${HeaderBarSelector}, ${HeaderBarChildrenSelector}, ${HeaderBarSelectors.join(',
           return dhPrivateKey;
         } else return await this.DhImportPrivateKey(dhPrivateKeyBytes);
       },
-      ChangeKeyDescriptor: function (hash, descriptor) {
-        DataBase.keys[hash].d = descriptor
-          .replace(/[`\r\n]/g, '')
-          .substr(0, 250);
-        this.FastSaveDb();
-      },
-      ChangeKeyHidden: function (hash, hidden) {
-        DataBase.keys[hash].h = hidden;
-        this.FastSaveDb();
-      },
-      DeleteKey: async function (hash) {
-        if (hash === DataBase.personalKeyHash) {
-          await this.NewPersonalKey();
-          return;
-        }
-        this.ReplaceChannelKeys(hash, DataBase.personalKeyHash);
-        delete DataBase.keys[hash];
-        if (DataBase.trustedKeys != null && DataBase.trustedKeys[hash]) {
-          if (DataBase.trustedKeys.length === 1) delete DataBase.trustedKeys;
-          else delete DataBase.trustedKeys[hash];
-        }
-        this.dbChanged = true;
-      },
-      ReplaceChannelKeys: function (oldHash, newHash) {
-        Object.values(DataBase.channels).forEach((x) => {
-          if (x.k === oldHash) x.k = newHash;
-        });
-        this.FastSaveDb();
-      },
-      NewPersonalKey: async function () {
-        if (DataBase.personalKeyHash != null)
-          this.ChangeKeyDescriptor(
-            DataBase.personalKeyHash,
-            'Old personal key'
-          );
-        let newPersonalKeyHash = await this.SaveKey(
-          this.GetRandomBytes(32),
-          3 /*personal*/,
-          '#Your personal key#'
-        );
-        this.ReplaceChannelKeys(DataBase.personalKeyHash, newPersonalKeyHash);
-        DataBase.personalKeyHash = newPersonalKeyHash;
-        this.FastSaveDb();
-      },
-      ToggleKeyTrusted: function (hash) {
-        let keyObj = DataBase.keys[hash];
-        if (keyObj.t /*type*/ === 3 /*personal*/) return;
-        let trustedKeys = DataBase.trustedKeys;
-        if (trustedKeys == null)
-          DataBase.trustedKeys = trustedKeys = { hash: 1 };
-        else {
-          if (DataBase.trustedKeys[hash]) {
-            if (DataBase.trustedKeys.length === 1) delete DataBase.trustedKeys;
-            else delete DataBase.trustedKeys[hash];
-          } else DataBase.trustedKeys[hash] = 1;
-        }
-        this.dbChanged = true;
-      },
+      ChangeKeyDescriptor: (hash, descriptor) => dbManager.changeKeyDescriptor(hash, descriptor),
+      ChangeKeyHidden: (hash, hidden) => dbManager.changeKeyHidden(hash, hidden),
+      DeleteKey: async (hash) => await dbManager.deleteKey(hash),
+      ReplaceChannelKeys: (oldHash, newHash) => dbManager.replaceChannelKeys(oldHash, newHash),
+      NewPersonalKey: async () => await dbManager.newPersonalKey(),
+      ToggleKeyTrusted: (hash) => dbManager.toggleKeyTrusted(hash),
 
-      FormatDescriptor: function (descriptor) {
-        return descriptor
-          .replace(/<@(\d{1,20})>/g, (m, x) => {
-            let user = Discord.getUser(x);
-            if (user != null) x = user.username;
-            return x;
-          })
-          .replace(/<#(\d{1,20})>/g, (m, x) => {
-            let channel = Discord.getChannel(x);
-            if (channel == null) return m;
-            if (channel.guild_id == null) return channel.name;
-            let guild = Discord.getGuild(channel.guild_id);
-            return `${guild.name} #${channel.name}`;
-          });
-      },
+      FormatDescriptor: (descriptor) => dbManager.formatDescriptor(descriptor),
 
-      GetChannelConfig: function (channelId) {
-        let channelConfig = DataBase.channels[channelId];
-        if (channelConfig != null) {
-          channelConfig.l = Date.now();
-          this.dbChanged = true;
-        }
-        return channelConfig;
-      },
-      GetOrCreateChannelConfig: function (channelId) {
-        let channelConfig = DataBase.channels[channelId];
-        if (channelConfig != null) {
-          channelConfig.l = Date.now();
-          this.dbChanged = true;
-          return channelConfig;
-        }
-        return this.NewChannelConfig(channelId);
-      },
-      NewChannelConfig: function (channelId, keyHash, descriptor, encrypt) {
-        let channelConfig = {
-          k: keyHash || DataBase.personalKeyHash,
-          e: encrypt ? 1 : 0,
-          l: Date.now(),
-        };
-        if (descriptor != null) channelConfig.d = descriptor;
-        else {
-          let channel = Discord.getChannel(channelId);
-          if (channel != null && channel.type === 1)
-            channelConfig.d = `DM with <@${channel.recipients[0]}>`;
-          else channelConfig.d = `<#${channelId}>`;
-        }
-        DataBase.channels[channelId] = channelConfig;
-        this.FastSaveDb();
-        return channelConfig;
-      },
-      DeleteChannelConfig: function (channelId) {
-        if (Cache.channelId === channelId) Cache.channelConfig = null;
-        delete DataBase.channels[channelId];
-        this.dbChanged = true;
-      },
+      GetChannelConfig: (channelId) => dbManager.getChannelConfig(channelId),
+      GetOrCreateChannelConfig: (channelId) => dbManager.getOrCreateChannelConfig(channelId),
+      NewChannelConfig: (channelId, keyHash, descriptor, encrypt) => dbManager.newChannelConfig(channelId, keyHash, descriptor, encrypt),
+      DeleteChannelConfig: (channelId) => dbManager.deleteChannelConfig(channelId),
       GetCurrentChannelKeyHash: () => {
         return Cache.channelConfig != null
           ? Cache.channelConfig.k
@@ -3300,6 +3514,13 @@ ${HeaderBarSelector}, ${HeaderBarChildrenSelector}, ${HeaderBarSelectors.join(',
           `*type*: \`PERSONAL KEY\`\n*key*: \`${keyHashPayload}\`\n*personalKey*: \`${personalKeyPayload}\``
         );
 
+        // [BUG FIX #3] Clear keyExchangeWhitelist after sending personal key
+        let channel = Discord.getChannel(channelId);
+        if (channel && channel.type === 1 && channel.recipients && channel.recipients[0]) {
+          const userId = channel.recipients[0];
+          delete keyExchangeWhitelist[userId];
+        }
+
         delete channelConfig.w;
         this.dbChanged = true;
       },
@@ -3393,6 +3614,7 @@ ${HeaderBarSelector}, ${HeaderBarChildrenSelector}, ${HeaderBarSelectors.join(',
 
           if (
             /friend/i.test(DataBase.autoKeyExchange) &&
+            typeof Discord.isFriend === 'function' &&
             !Discord.isFriend(userId)
           ) {
             if (this.ongoingKeyExchanges[userId]) return 0;
@@ -3419,6 +3641,7 @@ ${HeaderBarSelector}, ${HeaderBarChildrenSelector}, ${HeaderBarSelectors.join(',
         delete this.ongoingKeyExchanges[userId]; //this way once canceled you either have to add them as friend or restart the plugin
 
         keyExchangeWhitelist[userId] = true;
+        console.log('[SDC] InitKeyExchange: User whitelisted', { userId });
 
         if (channelId == null) {
           channelId = await Discord.ensurePrivateChannel(userId);
@@ -3430,11 +3653,13 @@ ${HeaderBarSelector}, ${HeaderBarChildrenSelector}, ${HeaderBarSelectors.join(',
 
         const sysMsg = `*type*: \`DH KEY\`\n*dhKey*: \`${dhPublicKeyPayload}\``;
 
+        console.log('[SDC] InitKeyExchange: Sending DH KEY', { channelId });
         this.SendSystemMessage(channelId, sysMsg);
         channelConfig =
           channelConfig || this.GetOrCreateChannelConfig(channelId);
         channelConfig.w = 1;
         this.dbChanged = true;
+        console.log('[SDC] InitKeyExchange: DH KEY sent, w=1');
         return 1;
       },
       ongoingKeyRequests: {},
@@ -3457,6 +3682,7 @@ ${HeaderBarSelector}, ${HeaderBarChildrenSelector}, ${HeaderBarSelectors.join(',
 
           if (
             /friend/i.test(DataBase.autoKeyExchange) &&
+            typeof Discord.isFriend === 'function' &&
             !Discord.isFriend(userId)
           ) {
             if (this.ongoingKeyRequests[requestId]) return false;
@@ -3547,8 +3773,10 @@ ${HeaderBarSelector}, ${HeaderBarChildrenSelector}, ${HeaderBarSelectors.join(',
         return true;
       },
       ShareKey: async function (keyHash, channelId, nonForced, user) {
+        console.log('[SDC] ShareKey: Starting key share', { keyHash: keyHash?.substring(0, 8), channelId });
         let keyObj = DataBase.keys[keyHash];
         if (keyObj == null) {
+          console.warn('[SDC] ShareKey: Key not found in database', keyHash?.substring(0, 8));
           this.SendSystemMessage(
             channelId,
             `*type*: \`KEY SHARE\`\n*status*: \`NOT FOUND\``
@@ -3588,7 +3816,27 @@ ${HeaderBarSelector}, ${HeaderBarChildrenSelector}, ${HeaderBarSelectors.join(',
 
         if (channelConfig == null)
           channelConfig = this.GetOrCreateChannelConfig(channelId);
+
+        // [BUG FIX #1] Valider que channelConfig.k existe avant encryption
+        if (!channelConfig.k) {
+          console.error('[SDC] ShareKey: No channel key set (channelConfig.k is null/undefined)', { channelId });
+          this.SendSystemMessage(
+            channelId,
+            `*type*: \`KEY SHARE\`\n*status*: \`ERROR - No channel key set\``
+          );
+          return;
+        }
+
         let key = await this.GetKeyByHash(channelConfig.k);
+        if (!key) {
+          console.error('[SDC] ShareKey: Channel key not found in database', { keyHash: channelConfig.k?.substring(0, 8) });
+          this.SendSystemMessage(
+            channelId,
+            `*type*: \`KEY SHARE\`\n*status*: \`ERROR - Channel key not found\``
+          );
+          return;
+        }
+
         let keyHashPayload = this.PayloadEncode(
           this.Base64ToBytes(channelConfig.k)
         );
@@ -4021,12 +4269,18 @@ ${HeaderBarSelector}, ${HeaderBarChildrenSelector}, ${HeaderBarSelectors.join(',
       mirrorFunction('GuildCache', 'getGuild');
 
       // FileUploader - Skip si vide (pas critique pour chiffrement de messages)
+      let fileUploaderSuccess = false;
       if (modules.FileUploader) {
         const uploaderKeys = Object.keys(modules.FileUploader);
         if (uploaderKeys.length > 0) {
-          mirrorFunction('FileUploader', 'upload');
-          mirrorFunction('FileUploader', 'instantBatchUpload');
-          mirrorFunction('FileUploader', 'uploadFiles');
+          // Essayer silencieusement sans logger les erreurs (module non critique)
+          const originalConsoleError = console.error;
+          console.error = () => { }; // Supprimer temporairement les logs d'erreur
+          const uploadResult = mirrorFunction('FileUploader', 'upload');
+          const batchResult = mirrorFunction('FileUploader', 'instantBatchUpload');
+          const filesResult = mirrorFunction('FileUploader', 'uploadFiles');
+          console.error = originalConsoleError; // Restaurer console.error
+          fileUploaderSuccess = uploadResult || batchResult || filesResult;
         }
       }
 
@@ -4038,12 +4292,18 @@ ${HeaderBarSelector}, ${HeaderBarChildrenSelector}, ${HeaderBarSelectors.join(',
         mirrorFunction('PrivateChannelManager', 'ensurePrivateChannel');
       }
 
+      let cloudUploadHelperSuccess = false;
       if (modules.CloudUploadHelper && typeof modules.CloudUploadHelper.getUploadPayload === 'function') {
-        mirrorFunction('CloudUploadHelper', 'getUploadPayload');
+        cloudUploadHelperSuccess = mirrorFunction('CloudUploadHelper', 'getUploadPayload');
       }
 
+      let cloudUploadProtoSuccess = false;
       if (modules.CloudUploadPrototype) {
-        mirrorFunction('CloudUploadPrototype', 'uploadFileToCloud');
+        // Essayer silencieusement uploadFileToCloud (non critique)
+        const originalConsoleError = console.error;
+        console.error = () => { }; // Supprimer temporairement les logs d'erreur
+        cloudUploadProtoSuccess = mirrorFunction('CloudUploadPrototype', 'uploadFileToCloud');
+        console.error = originalConsoleError; // Restaurer console.error
 
         // Gérer cloudUpload avec fallback
         Discord.cloudUpload = modules.CloudUploadPrototype.upload ||
@@ -4057,28 +4317,22 @@ ${HeaderBarSelector}, ${HeaderBarChildrenSelector}, ${HeaderBarSelectors.join(',
       // MessageDispatcher.dispatch est déjà configuré manuellement plus haut (detour_dispatch)
       // Pas besoin d'appeler hookFunction pour lui
 
-      // FileUploader hooks - Seulement si Discord.upload existe (créé par mirrorFunction)
-      if (Discord.upload) {
-        hookFunction('FileUploader', 'upload');
-      }
-      if (Discord.instantBatchUpload) {
-        hookFunction('FileUploader', 'instantBatchUpload');
-      }
-      if (Discord.uploadFiles) {
-        hookFunction('FileUploader', 'uploadFiles');
+      // FileUploader hooks - Seulement si mirrorFunction a réussi
+      if (fileUploaderSuccess) {
+        if (Discord.upload) hookFunction('FileUploader', 'upload');
+        if (Discord.instantBatchUpload) hookFunction('FileUploader', 'instantBatchUpload');
+        if (Discord.uploadFiles) hookFunction('FileUploader', 'uploadFiles');
       }
 
-      if (modules.CloudUploadHelper && Discord.getUploadPayload) {
+      if (cloudUploadHelperSuccess && Discord.getUploadPayload) {
         hookFunction('CloudUploadHelper', 'getUploadPayload');
       }
 
-      if (modules.CloudUploadPrototype && Discord.uploadFileToCloud) {
+      if (cloudUploadProtoSuccess && Discord.uploadFileToCloud) {
         hookFunction('CloudUploadPrototype', 'uploadFileToCloud');
       }
       if (modules.CloudUploadPrototype && Discord.cloudUpload) {
         hookFunction('CloudUploadPrototype', 'upload', 'cloudUpload');
-      } else {
-        console.warn('[SDC] cloudUpload non trouvé, modules.CloudUploadPrototype:', !!modules.CloudUploadPrototype, 'Discord.cloudUpload:', !!Discord.cloudUpload);
       }
 
     } catch (err) {
@@ -4378,14 +4632,15 @@ ${HeaderBarSelector}, ${HeaderBarChildrenSelector}, ${HeaderBarSelectors.join(',
       return await Discord.original_dispatch.apply(this, arguments);
   }
 
-  const messageRegex =
-    /^([⠀-⣿]{16,}) `(?:SimpleDiscordCrypt|🔒)`$/;
-  const systemMessageRegex =
-    /^```(?:\w*\n)?-----SYSTEM MESSAGE-----\n?```\s*(.*?)\s*```(?:\w*\n)?(?:🔒|SimpleDiscordCrypt)\n?```$/s;
-  const unknownKeyMessage =
-    '```fix\n-----ENCRYPTED MESSAGE WITH UNKNOWN KEY-----\n```';
-  const invalidMessage =
-    '```diff\n-⁣----ENCRYPTED MESSAGE WITH UNKNOWN FORMAT-----\n```'; //invisible separator after the first '-'
+  // ============================================================================
+  // SECTION 4: MESSAGE PROCESSING & ENCRYPTION
+  // ============================================================================
+
+  const messageRegex = CONFIG.patterns.message;
+  const systemMessageRegex = CONFIG.patterns.systemMessage;
+  const unknownKeyMessage = CONFIG.messages.unknownKey;
+  const invalidMessage = CONFIG.messages.invalid;
+
   async function processMessage(message, ignoreAttachments) {
     let result;
     const content = message.content;
@@ -4424,19 +4679,8 @@ ${HeaderBarSelector}, ${HeaderBarChildrenSelector}, ${HeaderBarSelectors.join(',
     messageContainer.scrollTop += by;
   }
 
-  var mediaTypes = {
-    png: 'img',
-    jpg: 'img',
-    jpeg: 'img',
-    gif: 'img',
-    webp: 'img',
-    webm: 'video',
-    mp4: 'video',
-    jpe: 'img',
-    jfif: 'img',
-    mov: 'video',
-  };
-  const extensionRegex = /\.([^.]+)$/;
+  var mediaTypes = CONFIG.mediaTypes;
+  const extensionRegex = CONFIG.patterns.extension;
   var downloadLocked = false;
   var downloadLocks = [];
   async function decryptAttachment(
@@ -4683,7 +4927,7 @@ ${HeaderBarSelector}, ${HeaderBarChildrenSelector}, ${HeaderBarSelectors.join(',
     }
   }
 
-  const starttimeRegex = /(?:(\d+)h)?(?:(\d+)m)?(?:(\d+)s)?/;
+  const starttimeRegex = CONFIG.patterns.starttime;
   function createYoutubeEmbed(id, timequery) {
     let embedUrl = `https://youtube.com/embed/${id}`;
     if (timequery != null) {
@@ -4707,19 +4951,19 @@ ${HeaderBarSelector}, ${HeaderBarChildrenSelector}, ${HeaderBarSelectors.join(',
       video: { url: embedUrl, width: 1280, height: 720 },
     };
   }
-  const youtubeRegex = /[?&]v=([\w-]+).*?(&(?:t|start)=[\dhms]+)?/;
+  const youtubeRegex = CONFIG.patterns.youtube;
   function embedYoutube(message, url, queryString) {
     let match = youtubeRegex.exec(queryString);
     if (match != null)
       message.embeds.push(createYoutubeEmbed(match[1], match[2]));
   }
-  const youtuRegex = /^([\w-]+).*?(\?(?:t|start)=[\dhms]+)?/;
+  const youtuRegex = CONFIG.patterns.youtu;
   function embedYoutu(message, url, queryString) {
     let match = youtuRegex.exec(queryString);
     if (match != null)
       message.embeds.push(createYoutubeEmbed(match[1], match[2]));
   }
-  const imageRegex = /^[^?]*\.(?:png|jpe?g|gif|webp)(?:$|\?)/i;
+  const imageRegex = CONFIG.patterns.image;
   function embedImage(message, url, queryString) {
     if (!imageRegex.test(queryString)) return;
 
@@ -4784,7 +5028,7 @@ ${HeaderBarSelector}, ${HeaderBarChildrenSelector}, ${HeaderBarSelectors.join(',
     }
     embedEncrypted(message, url, null);
   }
-  const validSoundcloudRegex = /^[^\/]+\/[^\/?]+(\?|$)/;
+  const validSoundcloudRegex = CONFIG.patterns.validSoundcloud;
   function embedSoundcloud(message, url, queryString) {
     if (validSoundcloudRegex.test(queryString))
       embedEncrypted(
@@ -4810,8 +5054,8 @@ ${HeaderBarSelector}, ${HeaderBarChildrenSelector}, ${HeaderBarSelectors.join(',
     });
 
   const MENTION_EVERYONE_CHECK = 0x20000n;
-  const everyoneRegex = /(?<!https?:\/\/[^\s]*)@(?:everyone|here)/;
-  const roleMentionRegex = /<@&(\d{16,20})>/g;
+  const everyoneRegex = CONFIG.patterns.everyone;
+  const roleMentionRegex = CONFIG.patterns.roleMention;
   const urlRegex =
     /(?:<https?:\/\/(?:[^\s\/?\.#]+\.)+(?:[^\s\/?\.#]+)\/[^\s<>'"]+>|https?:\/\/((?:[^\s\/?\.#]+\.)+(?:[^\s\/?\.#]+))\/([^\s<>'"]+))/g;
   function postProcessMessage(message, content) {
@@ -5070,11 +5314,9 @@ ${HeaderBarSelector}, ${HeaderBarChildrenSelector}, ${HeaderBarSelectors.join(',
     return match == null ? null : match[1];
   }
 
-  const unknownKeySystemMessage =
-    '```fix\n-----SYSTEM MESSAGE WITH UNKNOWN KEY-----\n```';
-  const invalidSystemMessage =
-    '```diff\n-⁣----SYSTEM MESSAGE WITH UNKNOWN FORMAT-----\n```';
-  const blockedSystemMessage = '```fix\n-----SYSTEM MESSAGE BLOCKED-----\n```';
+  const unknownKeySystemMessage = CONFIG.messages.unknownKeySystem;
+  const invalidSystemMessage = CONFIG.messages.invalidSystem;
+  const blockedSystemMessage = CONFIG.messages.blocked;
   var keyExchangeWhitelist = {};
   async function processSystemMessage(message, sysmsg) {
     let channel = Discord.getChannel(message.channel_id);
@@ -5115,6 +5357,7 @@ ${HeaderBarSelector}, ${HeaderBarChildrenSelector}, ${HeaderBarSelectors.join(',
       message.content = blockedSystemMessage;
       if (
         /friend/i.test(DataBase.autoKeyExchange) &&
+        typeof Discord.isFriend === 'function' &&
         !Discord.isFriend(userId)
       ) {
         if (
@@ -5180,13 +5423,15 @@ ${HeaderBarSelector}, ${HeaderBarChildrenSelector}, ${HeaderBarSelectors.join(',
             );
             let personalKeyPayload = Utils.PayloadEncode(encryptedPersonalKey);
 
+            console.log('[SDC] DH KEY: Sending DH RESPONSE with personal key', { keyHash: keyHash?.substring(0, 8) });
             Utils.SendSystemMessage(
               message.channel_id,
               `*type*: \`DH RESPONSE\`\n*dhKey*: \`${dhPublicKeyPayload}\`\n*personalKey*: \`${personalKeyPayload}\``
             );
 
-            channelConfig.w = 1; //waitingForSystemMessage
+            channelConfig.w = 1; //waitingForSystemMessage (PERSONAL KEY from initiator)
             Utils.dbChanged = true;
+            console.log('[SDC] DH KEY: DH RESPONSE sent, w=1, waiting for PERSONAL KEY');
             decryptWaitingMessages(keyHash);
           } catch (e) {
             break;
@@ -5243,6 +5488,9 @@ ${HeaderBarSelector}, ${HeaderBarChildrenSelector}, ${HeaderBarSelectors.join(',
             Utils.KeyShareEvent(remotePersonalKeyHash);
 
             await Utils.SendPersonalKey(message.channel_id);
+
+            // [BUG FIX #2] Clear keyExchangeWhitelist after sending PERSONAL KEY
+            delete keyExchangeWhitelist[userId];
 
             Utils.KeyExchangeEvent(userId);
 
@@ -5432,7 +5680,7 @@ ${HeaderBarSelector}, ${HeaderBarChildrenSelector}, ${HeaderBarSelectors.join(',
     });
   }
 
-  const descriptionRegex = /^[⠀-⣿]{16,}$/;
+  const descriptionRegex = CONFIG.patterns.description;
   async function processEmbeds(message, ignoreAttachments) {
     if (message.embeds == null || message.embeds.length !== 1) return;
     let embed = message.embeds[0];
@@ -5491,8 +5739,8 @@ ${HeaderBarSelector}, ${HeaderBarChildrenSelector}, ${HeaderBarSelectors.join(',
   }
 
   const EMBED_LINKS_CHECK = 0x4000n;
-  const prefixRegex = /^(?::?ENC(?:(?:_\w*)?:|\b)|<:ENC:\d{1,20}>)\s*/;
-  const noencprefixRegex = /^(?::?NOENC:?|<:NOENC:\d{1,20}>)\s*/; //not really expecting an emoji
+  const prefixRegex = CONFIG.patterns.prefix;
+  const noencprefixRegex = CONFIG.patterns.noencPrefix;
   async function handleSend(channelId, message, forceSimple) {
     let content = message.content;
 
@@ -5579,8 +5827,12 @@ ${HeaderBarSelector}, ${HeaderBarChildrenSelector}, ${HeaderBarSelectors.join(',
     return await Utils.GetKeyByHash(channelConfig.k);
   }
 
-  const filenameLimit = 47;
-  const filenameRegex = /^(.*?)((?:\.[^.]*)?)$/;
+  // ============================================================================
+  // SECTION 5: FILE UPLOAD & ATTACHMENT HANDLING
+  // ============================================================================
+
+  const filenameLimit = CONFIG.limits.maxFilenameLength;
+  const filenameRegex = CONFIG.patterns.filename;
   async function encryptFilename(key, filename) {
     let filenameParts = filenameRegex.exec(filename);
     let filenameMax = filenameLimit - filenameParts[2].length;
@@ -5903,6 +6155,10 @@ ${HeaderBarSelector}, ${HeaderBarChildrenSelector}, ${HeaderBarSelectors.join(',
 
     return Discord.original_dispatch.apply(this, arguments);
   }
+
+  // ============================================================================
+  // SECTION 6: PLUGIN LIFECYCLE & EVENT HOOKS
+  // ============================================================================
 
   var dbSaveInterval;
   function Load() {
