@@ -88,6 +88,9 @@ module.exports = class AutoFollowUser {
         const isFollowing = this.currentUser === userId;
         const menuItem = this.createMenuItem(userId, isFollowing);
 
+        // Vérifié que le bouton apparait que sur les utilisateurs autres que soi-même
+        if (userId === BdApi.Webpack.getModule(m => m.getCurrentUser)?.().id) return;
+
         // Insertion après le premier groupe de menu
         const firstGroup = contextMenu.querySelector('[role="group"]');
         if (firstGroup) {
