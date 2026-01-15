@@ -82,11 +82,41 @@ module.exports = class AutoFollowUser {
         
         if (!userId) return;
 
-        const isGuildContext = contextMenu.querySelector('[aria-label*="Server"]') ||
-                      contextMenu.querySelector('[discord-style*="guild"]') ||
-                      contextMenu.textContent.toLowerCase().includes('leave server') ||
-                      contextMenu.textContent.includes('Paramètres du serveur');
-        if (isGuildContext) return;
+        // Détection fiable du menu contextuel de serveur (guild)
+        const isGuildContext = 
+            // Aria-labels (parfois présents sur un item du menu)
+            contextMenu.querySelector('[aria-label*="Server"]') ||
+            contextMenu.querySelector('[aria-label*="Serveur"]') ||
+            
+            // Textes typiques des menus de serveur (anglais + français)
+            contextMenu.textContent.toLowerCase().includes('leave server') ||
+            contextMenu.textContent.toLowerCase().includes('quitter le serveur') ||
+            contextMenu.textContent.toLowerCase().includes('server settings') ||
+            contextMenu.textContent.toLowerCase().includes('paramètres du serveur') ||
+            contextMenu.textContent.toLowerCase().includes('create invite') ||
+            contextMenu.textContent.toLowerCase().includes('créer une invitation') ||
+            contextMenu.textContent.toLowerCase().includes('reply') ||
+            contextMenu.textContent.toLowerCase().includes('répondre') ||
+            contextMenu.textContent.toLowerCase().includes('edit message') ||
+            contextMenu.textContent.toLowerCase().includes('modifier le message') ||
+            contextMenu.textContent.toLowerCase().includes('copy message link') ||
+            contextMenu.textContent.toLowerCase().includes('copier le lien du message') ||
+            contextMenu.textContent.toLowerCase().includes('pin message') ||
+            contextMenu.textContent.toLowerCase().includes('épingler le message');
+            
+            // Autres indices fréquents (roles, emoji, etc.)
+            contextMenu.textContent.toLowerCase().includes('roles') && 
+            contextMenu.textContent.toLowerCase().includes('emoji') ||
+            contextMenu.querySelector('[aria-label*="Invite People"]') ||
+            contextMenu.querySelector('[aria-label*="Inviter des gens"]')
+            contextMenu.querySelector('[aria-label*="Reply"]') ||
+            contextMenu.querySelector('[aria-label*="Répondre"]') ||
+            contextMenu.querySelector('[aria-label*="Edit"]') ||
+            contextMenu.querySelector('[aria-label*="Copy Message Link"]');
+
+        if (isGuildContext) {
+            return;  // ← On arrête tout de suite, pas besoin d'injecter
+        }
 
         // Vérification si déjà injecté
         if (contextMenu.querySelector('#auto-follow-context')) return;
