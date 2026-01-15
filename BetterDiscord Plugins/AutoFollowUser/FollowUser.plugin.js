@@ -54,106 +54,72 @@ module.exports = class AutoFollowUser {
     }
 
     injectContextMenuItem(contextMenu) {
-        // Extraction de l'userId via React Fiber (remontée dans l'arbre)
-        let fiber = this.getReactInstance(contextMenu);
+        if (contextMenu.dataset?.autoFollowInjected) return; // Évite les doubles injections
+
+        // 1. Trouver userId très tôt (ta fonction existante)
         let userId = null;
+        let fiber = this.getReactInstance(contextMenu);
         let attempts = 0;
-        
-        // Remonte l'arbre React pour trouver l'userId
-        while (fiber && attempts < 50) {
-            const props = fiber.memoizedProps || fiber.pendingProps;
-            
-            if (props?.user?.id) {
-                userId = props.user.id;
-                break;
+
+        let isUserMenu = false;
+        let isMessageMenu = false;
+        let isGuildMenu = false;
+
+        while (fiber && attempts < 70) {  // Augmente un peu si besoin
+            const props = fiber.memoizedProps || fiber.pendingProps || {};
+            const typeName = fiber.type?.displayName || fiber.type?.name || "";
+
+            // Détection du type de menu (les noms changent parfois, mais ces patterns tiennent longtemps)
+            if (typeName.includes("User") && !typeName.includes("Message") && (props.user || props.userId)) {
+                isUserMenu = true;
             }
-            if (props?.userId) {
-                userId = props.userId;
-                break;
+            if (typeName.includes("Message") || props.message || props.targetMessage || props.messageId) {
+                isMessageMenu = true;
             }
-            if (props?.channel?.recipients?.[0]) {
-                userId = props.channel.recipients[0];
-                break;
+            if (typeName.includes("Guild") || typeName.includes("Server") || props.guild || props.guildId) {
+                isGuildMenu = true;
             }
-            
+
+            // Récup userId en même temps
+            if (!userId) {
+                if (props?.user?.id) userId = props.user.id;
+                else if (props?.userId) userId = props.userId;
+                else if (props?.channel?.recipients?.[0]) userId = props.channel.recipients[0];
+            }
+
             fiber = fiber.return;
             attempts++;
         }
-        
-        if (!userId) return;
 
-        // Détection fiable du menu contextuel de serveur (guild)
-        const isGuildContext = 
-            // Aria-labels (parfois présents sur un item du menu)
-            contextMenu.querySelector('[aria-label*="Server"]') ||
-            contextMenu.querySelector('[aria-label*="Serveur"]') ||
-            
-            // Textes typiques des menus de serveur (anglais + français)
-            contextMenu.textContent.toLowerCase().includes('leave server') ||
-            contextMenu.textContent.toLowerCase().includes('quitter le serveur') ||
-            contextMenu.textContent.toLowerCase().includes('server settings') ||
-            contextMenu.textContent.toLowerCase().includes('paramètres du serveur') ||
-            contextMenu.textContent.toLowerCase().includes('create invite') ||
-            contextMenu.textContent.toLowerCase().includes('créer une invitation') ||
-            contextMenu.textContent.toLowerCase().includes('reply') ||
-            contextMenu.textContent.toLowerCase().includes('répondre') ||
-            contextMenu.textContent.toLowerCase().includes('edit message') ||
-            contextMenu.textContent.toLowerCase().includes('modifier le message') ||
-            contextMenu.textContent.toLowerCase().includes('copy message link') ||
-            contextMenu.textContent.toLowerCase().includes('copier le lien du message') ||
-            contextMenu.textContent.toLowerCase().includes('pin message') ||
-            contextMenu.textContent.toLowerCase().includes('épingler le message');
-
-            contextMenu.textContent.toLowerCase().includes('manage roles') ||
-            contextMenu.textContent.toLowerCase().includes('gérer les rôles') ||
-            contextMenu.textContent.toLowerCase().includes('view server boost stats') ||
-            contextMenu.textContent.toLowerCase().includes('voir les statistiques de boost du serveur') ||
-            contextMenu.textContent.toLowerCase().includes('server region') ||
-            contextMenu.textContent.toLowerCase().includes('région du serveur') ||
-            contextMenu.textContent.toLowerCase().includes('notification settings') ||
-            contextMenu.textContent.toLowerCase().includes('paramètres de notification') ||
-            contextMenu.textContent.toLowerCase().includes('privacy settings') ||
-            contextMenu.textContent.toLowerCase().includes('paramètres de confidentialité') ||
-            contextMenu.textContent.toLowerCase().includes('audit log') ||
-            contextMenu.textContent.toLowerCase().includes('journal des audits') ||
-            contextMenu.textContent.toLowerCase().includes('server roles') ||
-            contextMenu.textContent.toLowerCase().includes('rôles du serveur') ||
-            contextMenu.textContent.toLowerCase().includes('emojis') ||
-            contextMenu.textContent.toLowerCase().includes('émojis') ||
-
-            // Autres indices fréquents (roles, emoji, etc.)
-            contextMenu.textContent.toLowerCase().includes('roles') && 
-            contextMenu.textContent.toLowerCase().includes('emoji') ||
-            contextMenu.querySelector('[aria-label*="Invite People"]') ||
-            contextMenu.querySelector('[aria-label*="Inviter des gens"]')
-            contextMenu.querySelector('[aria-label*="Reply"]') ||
-            contextMenu.querySelector('[aria-label*="Répondre"]') ||
-            contextMenu.querySelector('[aria-label*="Edit"]') ||
-            contextMenu.querySelector('[aria-label*="Copy Message Link"]');
-
-        if (isGuildContext) {
-            return;  // ← On arrête tout de suite, pas besoin d'injecter
+        // Règle stricte : ON N'INJECTE QUE si c'est clairement un menu USER et PAS les autres
+        if (!userId || !isUserMenu || isMessageMenu || isGuildMenu) {
+            return;
         }
 
-        // Vérification si déjà injecté
+        // Sécurité supplémentaire : pas soi-même, pas bot
+        const currentUserId = BdApi.Webpack.getModule(m => m.getCurrentUser)?.().id;
+        if (userId === currentUserId) return;
+
+        const userModule = BdApi.Webpack.getModule(m => m.getUser);
+        const user = userModule?.getUser?.(userId);
+        if (!user || user.bot) return;
+
+        // Ok, c'est bon → on injecte !
         if (contextMenu.querySelector('#auto-follow-context')) return;
 
         const isFollowing = this.currentUser === userId;
         const menuItem = this.createMenuItem(userId, isFollowing);
 
-        // Insertion après le premier groupe de menu
+        // Insertion (ta logique existante ou améliorée)
         const firstGroup = contextMenu.querySelector('[role="group"]');
         if (firstGroup) {
             firstGroup.appendChild(menuItem);
         } else {
-            // Fallback: insertion au début
-            const firstItem = contextMenu.querySelector('[role="menuitem"]');
-            if (firstItem && firstItem.parentNode) {
-                firstItem.parentNode.insertBefore(menuItem, firstItem);
-            } else {
-                contextMenu.appendChild(menuItem);
-            }
+            contextMenu.appendChild(menuItem); // ou insertBefore comme avant
         }
+
+        // Marquer pour éviter ré-essais inutiles
+        contextMenu.dataset.autoFollowInjected = "true";
     }
 
     createMenuItem(userId, isFollowing) {
