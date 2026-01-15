@@ -32,9 +32,7 @@ module.exports = class AutoFollowUser {
             for (const mutation of mutations) {
                 for (const node of mutation.addedNodes) {
                     if (node.nodeType === 1) {
-                        // Détection de TOUS les types de menus contextuels
-                        const menu = node.querySelector?.('[role="menu"]') ||
-                                   (node.getAttribute?.('role') === 'menu' ? node : null);
+                        // Detection 
                         
                         if (menu && !menu.querySelector('#auto-follow-context')) {
                             this.injectContextMenuItem(menu);
@@ -103,6 +101,26 @@ module.exports = class AutoFollowUser {
             contextMenu.textContent.toLowerCase().includes('copier le lien du message') ||
             contextMenu.textContent.toLowerCase().includes('pin message') ||
             contextMenu.textContent.toLowerCase().includes('épingler le message');
+
+            // Ajoute d'autres vérifications si nécessaire
+            contextMenu.textContent.toLowerCase().includes('manage roles') ||
+            contextMenu.textContent.toLowerCase().includes('gérer les rôles') ||
+            contextMenu.textContent.toLowerCase().includes('view server boost stats') ||
+            contextMenu.textContent.toLowerCase().includes('voir les statistiques de boost du serveur') ||
+            contextMenu.textContent.toLowerCase().includes('server region') ||
+            contextMenu.textContent.toLowerCase().includes('région du serveur') ||
+            contextMenu.textContent.toLowerCase().includes('notification settings') ||
+            contextMenu.textContent.toLowerCase().includes('paramètres de notification') ||
+            contextMenu.textContent.toLowerCase().includes('privacy settings') ||
+            contextMenu.textContent.toLowerCase().includes('paramètres de confidentialité') ||
+            contextMenu.textContent.toLowerCase().includes('audit log') ||
+            contextMenu.textContent.toLowerCase().includes('journal des audits') ||
+            contextMenu.textContent.toLowerCase().includes('server roles') ||
+            contextMenu.textContent.toLowerCase().includes('rôles du serveur') ||
+            contextMenu.textContent.toLowerCase().includes('emojis') ||
+            contextMenu.textContent.toLowerCase().includes('émojis') ||
+            contextMenu.textContent.toLowerCase().includes('stickers') ||
+            contextMenu.textContent.toLowerCase().includes('autocollants') ||
             
             // Autres indices fréquents (roles, emoji, etc.)
             contextMenu.textContent.toLowerCase().includes('roles') && 
