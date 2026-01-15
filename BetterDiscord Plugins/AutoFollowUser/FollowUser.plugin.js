@@ -1,7 +1,7 @@
 /**
  * @name AutoFollowUser
  * @author Sleek
- * @version 1.1.5
+ * @version 1.1.6
  * @description Ce plugin BetterDiscord vous permet de suivre automatiquement vos amis lorsqu'ils entrent dans un salon vocal, sans logs ni console.
  */
 
@@ -82,14 +82,17 @@ module.exports = class AutoFollowUser {
         
         if (!userId) return;
 
+        const isGuildContext = contextMenu.querySelector('[aria-label*="Server"]') ||
+                      contextMenu.querySelector('[discord-style*="guild"]') ||
+                      contextMenu.textContent.toLowerCase().includes('leave server') ||
+                      contextMenu.textContent.includes('Paramètres du serveur');
+        if (isGuildContext) return;
+
         // Vérification si déjà injecté
         if (contextMenu.querySelector('#auto-follow-context')) return;
 
         const isFollowing = this.currentUser === userId;
         const menuItem = this.createMenuItem(userId, isFollowing);
-
-        // Vérifié que le bouton apparait que sur les utilisateurs autres que soi-même
-        if (userId === BdApi.Webpack.getModule(m => m.getCurrentUser)?.().id) return;
 
         // Insertion après le premier groupe de menu
         const firstGroup = contextMenu.querySelector('[role="group"]');
@@ -115,7 +118,7 @@ module.exports = class AutoFollowUser {
         
         item.style.cssText = `
             background: transparent !important; 
-            color: var(--interactive-normal) !important;
+            color: white !important;
             padding: 6px 8px !important;
             min-height: 32px !important;
             display: flex !important;
@@ -148,7 +151,7 @@ module.exports = class AutoFollowUser {
             item.classList.add('focused_c1e9c4');
             item.style.cssText = `
                 background: var(--menu-item-default-hover-bg) !important; 
-                color: var(--interactive-hover) !important;
+                color: white !important;
                 padding: 6px 8px !important;
                 min-height: 32px !important;
                 display: flex !important;
@@ -162,7 +165,7 @@ module.exports = class AutoFollowUser {
             item.classList.remove('focused_c1e9c4');
             item.style.cssText = `
                 background: transparent !important; 
-                color: var(--interactive-normal) !important;
+                color: white !important;
                 padding: 6px 8px !important;
                 min-height: 32px !important;
                 display: flex !important;
