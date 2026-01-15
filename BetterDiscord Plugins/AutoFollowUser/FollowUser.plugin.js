@@ -32,7 +32,9 @@ module.exports = class AutoFollowUser {
             for (const mutation of mutations) {
                 for (const node of mutation.addedNodes) {
                     if (node.nodeType === 1) {
-                        // Detection 
+                        // Détection de TOUS les types de menus contextuels
+                        const menu = node.querySelector?.('[role="menu"]') ||
+                                   (node.getAttribute?.('role') === 'menu' ? node : null);
                         
                         if (menu && !menu.querySelector('#auto-follow-context')) {
                             this.injectContextMenuItem(menu);
@@ -102,7 +104,6 @@ module.exports = class AutoFollowUser {
             contextMenu.textContent.toLowerCase().includes('pin message') ||
             contextMenu.textContent.toLowerCase().includes('épingler le message');
 
-            // Ajoute d'autres vérifications si nécessaire
             contextMenu.textContent.toLowerCase().includes('manage roles') ||
             contextMenu.textContent.toLowerCase().includes('gérer les rôles') ||
             contextMenu.textContent.toLowerCase().includes('view server boost stats') ||
@@ -119,9 +120,7 @@ module.exports = class AutoFollowUser {
             contextMenu.textContent.toLowerCase().includes('rôles du serveur') ||
             contextMenu.textContent.toLowerCase().includes('emojis') ||
             contextMenu.textContent.toLowerCase().includes('émojis') ||
-            contextMenu.textContent.toLowerCase().includes('stickers') ||
-            contextMenu.textContent.toLowerCase().includes('autocollants') ||
-            
+
             // Autres indices fréquents (roles, emoji, etc.)
             contextMenu.textContent.toLowerCase().includes('roles') && 
             contextMenu.textContent.toLowerCase().includes('emoji') ||
